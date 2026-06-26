@@ -5,7 +5,7 @@
   - Forward simulation scripts for real specimen geometries.
   - Required data files including finite element (FEM) mesh files (`.inp`), strain field data (`.dat`), weight functions, and microstructural information.
 - **Usage**: Run the main life prediction script within this directory.
-- 
+
 ## Requirements
 - Python 3.x
 - Required libraries: `numpy`, `pandas`, `scipy`
