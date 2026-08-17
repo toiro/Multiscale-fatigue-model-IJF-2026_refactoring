@@ -1,0 +1,204 @@
+# Refactoring Log
+
+## Summary
+
+このファイルは完了済み作業と検証履歴を記録する。現在の方針は [refactoring_plan.md](refactoring_plan.md)、次に行うタスクは [refactoring_todo.md](refactoring_todo.md) を参照する。
+
+## Completed Work
+
+- `AGENTS.md` に作業方針とサブエージェント利用方針を記録した。
+- `docs/refactoring_plan.md` に初期リファクタリング計画を記録した。
+- seed、出力先フォルダ、軽量実行オプションを指定可能にした。
+- `scripts/Invoke-SmokeVerification.ps1` を追加した。
+- `scripts/Invoke-BaselineComparison.ps1` を追加した。
+- `scripts/Invoke-LegacyMiniVerification.ps1` を追加した。
+- `tools/compare_csv_outputs.py` を追加した。
+- `tools/validate_output_csv.py` を追加した。
+- import/config/fixture/mock 計算による短時間 smoke 検証を追加した。
+- original script に `MFM_RANDOM_SEED`, `MFM_OUTPUT_DIR`, `MFM_SIGMA_NOM`, `MFM_ITERATIONS`, `MFM_N_SYMM`, `MFM_MAX_ACTIVE_ELEMENTS` の最小 env var 対応を追加した。
+- `scripts/Invoke-BaselineComparison.ps1` を original env baseline と `src` runner の比較に更新した。
+- `src/` に責務別モジュール構成を追加した。
+- legacy スクリプトの定義部を `legacy_model.py` に移し、import 時に top-level 実行が走らない形にした。
+- 計算結果を `ElementLifeResult`, `IterationResult`, `LoadCaseResult`, `SimulationResult` として扱う足場を追加した。
+- CSV 出力を `output.py` に分離した。
+- `calculation/crack_life.py` と `calculation/element_life.py` に context 経由の再利用 API を追加した。
+- package root から `SimulationConfig`, `build_context`, `run_simulation`, result 型、計算 API を import できるようにした。
+- `CrackLifeResult` を追加し、`calculate_crack_life` が result データを返すようにした。
+- `SimulationConfig` を主名にし、`LegacyRunConfig` を互換 alias にした。
+- `BasicParameters`, `AbaqusDatabaseCreator`, `MaterialDataImporter`, `FieldValuesFunction` を各責務別モジュールへ実体移植した。
+- `CrackLifeCalc` の raw kernel を `calculation/crack_life.py` へ移植した。
+- `ElementLife` の raw kernel を `calculation/element_life.py` へ移植した。
+- `context.py` と通常実行経路から `legacy_model` 依存を外した。
+- `legacy_model.py` を互換 shim 化した。
+- `BasicParameters.__init__` と `build_context` に残っていた `os.chdir` を撤去した。
+- `paths.py` を追加し、入力ファイルと legacy cache のパス解決を `base_dir` / `cache_dir` 起点に分けた。
+- `AbaqusDatabaseCreator` に `base_dir` / `cache_dir` を渡せるようにした。
+- `MaterialDataImporter` に `base_dir` / `cache_dir` を渡せるようにした。
+- `SimulationConfig` に `cache_dir`, `steel`, `specimen_type`, `thickness_sign`, `crystal`, `r_ratio`, `c_paris`, `n_paris`, `delta_delta_th` を追加した。
+- `BasicParameters` の主要入力条件を keyword 引数化した。
+- CLI から `cache_dir` と主要入力条件を指定できるようにした。
+- `calculation/load_case.py` に `AreaElementStress` と `ElementLifeCalculator` protocol を追加した。
+- `imax` を有効 area element 数で上限付けし、NaN 除外後の index error を防ぐようにした。
+- `paths.py` に grain CSV, tensile CSV, friction CSV, weight-function JSON の filename helper を追加した。
+- `SimulationContext` に `parameter_snapshot` を追加した。
+- `CalculationContext` を追加し、`run_simulation` から計算層へ渡す文脈を分離した。
+- `calculate_load_case`, `calculate_element_life`, `calculate_crack_life` の計算入口を `CalculationContext` に移行した。
+- `calculation/inputs.py` を追加し、計算核向けの `CalculationInputData` と用途別 dataclass を導入した。
+- `CalculationContext` に `input_data` を追加し、`load_case.py` の荷重ケース処理を `SpecimenGeometry`, `EvaluationPointDefinition`, `FieldDataForCalculation` 経由へ移行し始めた。
+- `runner.py` と `OutputContext` を追加し、`run_simulation` の引数を `CalculationContext` に移行した。
+- `calculation/load_case.py` から `SimulationContext` と `output.py` への依存を外した。
+- `element_life.py` の初期配列、area element geometry、初期結晶粒リスト生成、方位生成、摩擦強度判定の一部を `CalculationInputData` 経由へ置き換えた。
+- `element_life.py` の raw kernel から `BasicParams` / `DataImport` の直接参照を外した。
+- `crack_life.py` の Paris 則定数、応力比、Stage I 境界の一部を `CalculationInputData` 経由へ置き換えた。
+- `crack_life.py` の crack aspect と grain generation 周辺の試験片形状参照を `SpecimenGeometry` 経由へ置き換えた。
+- `crack_life.py` の CTSD 内にある slip zone 初期長の試験片形状参照を `SpecimenGeometry` 経由へ置き換えた。
+- `crack_life.py` に残っていた weight function 正規化、remote stress 変換、Stage II 厚さ上限、破断条件・後処理の試験片形状参照を `SpecimenGeometry` 経由へ置き換えた。
+- `crack_life.py` の weight function、Gauss 積分点、remote stress function、crack interaction constant 参照を `WeightFunctionData` 経由へ置き換えた。
+- `crack_life.py` の material strength 参照を `MaterialStrengthProperties` 経由へ置き換えた。
+- `crack_life.py` の評価点参照を `EvaluationPointDefinition` 経由へ置き換えた。
+- `crack_life.py` の微視組織生成とすべり面 resolver 参照を `MicrostructureModel` 経由へ置き換え、`BasicParams.*` / `DataImport.*` の直接参照を撤去した。
+- `crack_life.py` の `safe_arccos`, crack aspect 関数、評価点生成を private 関数へ切り出した。
+- `crack_life.py` の CTSD 計算を `_evaluate_ctsd_at_crack_depth` と関連 helper へ切り出した。
+- `crack_life.py` の K 値計算、remote stress 変換、closure factor 計算を private 関数へ切り出した。
+- `crack_life.py` の初期き裂寸法、粒界生成、life integration を private 関数へ切り出し、計算核内部の構造化を完了した。
+- `MaterialDataImporter` に用途別 view dataclass を導入し、初期化処理を粒径分布、legacy 属性初期化、材料強度、Abaqus field cache、weight function、微視組織生成、view 生成に分けた。
+- `calculation/inputs.py` は `MaterialDataImporter` の用途別 view を優先し、legacy 属性へ fallback する形にした。
+- `FieldValuesFunction` が読む Abaqus field cache 参照を `abaqus_field_cache` view 経由へ寄せた。
+- `output.py` の ferrite friction strength 参照を `mechanical_properties` view 経由へ寄せた。
+- 主要入口に実行順 docstring を追加し、`FieldValuesA`, `FieldValuesAE`, `FieldValuesAP` の意味を明示した。
+- `print` の logger/progress callback 化は、現時点では必要性が低く、研究者向け読解性を下げる可能性があるため見送る判断にした。
+- `CalculationInputData` の各 dataclass に、論文上のサブモデルや入力条件との対応を示す docstring を追加した。
+- `BasicParameters` に残る研究条件、active zone、Stage I/II 評価点、微視組織相の読み方を docstring/comment で補った。
+- `results.py` の raw tuple 変換境界に、各位置が対応する研究量を示す docstring を追加した。
+- `MaterialDataImporter` に、実測入力、Abaqus cache、weight function、生成微視組織の境界を示す docstring/comment を追加した。
+- 乱数利用箇所に `Random sampling:` コメントを追加し、乱数順序を変えずに物理モデル単位で追えるようにした。
+
+## Key Decisions
+
+- 外部の `model_code_map.md` は先行作成しない。まずコード内の構造、型名、関数名、docstring、節コメントで読解性を上げる。
+- 計算核には `SimulationContext` 全体を渡さず、`CalculationContext` を導入する。
+- 計算式の整理は、同値変形ではなく、命名、節コメント、private 関数化、dataclass 化から進める。
+- `FieldValues.pkl` と `gData.pkl` は `cache_dir` 起点で扱う。ただし legacy 互換のため、`cache_dir` 未指定時は `base_dir` を使う。
+- baseline 比較は CSV 完全一致を基本とする。
+
+## Verification Log
+
+- 2026-08-08: Python compile check passed for the new `src/` and `tools/` files.
+- 2026-08-08: Dummy CSV comparison passed with `tools/compare_csv_outputs.py`.
+- 2026-08-08: Dummy CSV validation passed with `tools/validate_output_csv.py`.
+- 2026-08-08: `scripts/Invoke-SmokeVerification.ps1` timed out after 5 minutes before writing CSV files.
+- 2026-08-08: `scripts/Invoke-SmokeVerification.ps1` was changed to import/config/fixture/mock calculation smoke and passed in under 30 seconds.
+- 2026-08-08: Smoke verification passed after adding the recommended module structure.
+- 2026-08-08: `tools/compare_csv_outputs.py` now reports the first differing row/value for changed columns; smoke verification passed afterward.
+- 2026-08-08: Original env baseline and structured `src` runner produced matching CSV outputs for seed 42, sigma 150, iteration 0, n_symm 1, max_active_elements 1.
+- 2026-08-08: Baseline comparison still passed after replacing `FieldValuesFunction` global references with instance references.
+- 2026-08-08: Baseline comparison still passed after introducing context-based crack/element calculation wrappers.
+- 2026-08-08: Public package API import check passed; smoke verification passed afterward.
+- 2026-08-08: Added `CrackLifeResult`, made `SimulationConfig` the primary config name, and documented the legacy-kernel adapter boundary; smoke verification passed afterward.
+- 2026-08-08: Final `scripts/Invoke-BaselineComparison.ps1` passed. Original env baseline and structured `src` runner CSV outputs matched exactly.
+- 2026-08-08: Moved class and calculation kernels out of `legacy_model.py`; candidate CSV outputs still matched the existing original baseline after the move.
+- 2026-08-08: Converted `legacy_model.py` to a compatibility shim; smoke verification passed and normal `src` execution no longer imports `legacy_model`.
+- 2026-08-08: Final baseline comparison passed after `legacy_model.py` shim conversion. Original env baseline and structured `src` runner CSV outputs matched exactly.
+- 2026-08-08: cwd/パス依存撤去、`cache_dir` 導入、`SimulationConfig` 主要入力条件追加、`load_case` 型境界改善を実施した。smoke verification と baseline comparison はいずれも通過し、CSV は完全一致した。
+- 2026-08-08: filename helper 集約と `parameter_snapshot` 追加後も smoke verification と baseline comparison が通過し、CSV は完全一致した。
+- 2026-08-08: `CalculationContext` 導入後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-08: `CalculationInputData` 導入と `load_case.py` の参照置換後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-08: `run_simulation` の `CalculationContext` 化と `calculation/` からの出力依存撤去後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `run_simulation` 直呼び確認, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-08: `element_life.py` の低リスク参照置換後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `crack_life.py` の Paris 則定数、応力比、Stage I 境界参照の置換後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `element_life.py` に残っていた未使用の `BasicParams` / `DataImport` 別名を撤去し、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1` が通過した。
+- 2026-08-09: `crack_life.py` の crack aspect / grain generation 周辺と CTSD 内 slip zone 初期長の形状参照置換後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `crack_life.py` の残りの試験片形状参照置換後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `crack_life.py` の weight function 参照置換後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `crack_life.py` の material strength 参照置換後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `crack_life.py` の評価点参照置換後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `crack_life.py` の微視組織生成とすべり面 resolver 参照置換後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `crack_life.py` の `safe_arccos`, crack aspect 関数、評価点生成の private 関数化後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `crack_life.py` の CTSD 計算 private 関数化後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `crack_life.py` の K 値計算、remote stress 変換、closure factor 計算 private 関数化後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `crack_life.py` の初期き裂寸法、粒界生成、life integration private 関数化後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `MaterialDataImporter` の Phase 4 分離後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: Phase 5 の `FieldValuesFunction` / `output.py` façade 解消後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: Phase 5 の実行順 docstring 追加後、`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1` が通過した。
+- 2026-08-09: 論文実装としての単純化チェックの第一弾として、入力 dataclass、研究条件、raw tuple 境界、材料データ境界、乱数利用箇所を docstring/comment で見える化した。`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1` が通過した。
+- 2026-08-09: warning 抑制の意図と `_crack_life_raw` の `S_*` 履歴配列の評価点対応をコメントで明示した。`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1` が通過した。
+- 2026-08-09: README と package docstring に研究者向けの読む順番を追加し、`CalculationInputData` の明らかな配列・callable 型注釈を小さく整理した。`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1` が通過した。
+- 2026-08-09: legacy 属性名の読み替えを `legacy_adapter.py` に移し、`CalculationContext` を `CalculationInputData` のみへ縮小した。`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `CalculationContext` と `calculation/context.py` を廃止し、計算入口を `CalculationInputData` 直接受け取りへ単純化した。`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `legacy_adapter.py` を top-level public API から外し、通常読解ルートからの分離を強めた。`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1` が通過した。
+- 2026-08-09: `runner.py` の top-level legacy adapter import を互換入口内の遅延 import に移し、通常計算入口から legacy adapter をさらに分離した。`py -m compileall src tools`, `scripts/Invoke-SmokeVerification.ps1` が通過した。
+- 2026-08-09: `smoke.py`, `legacy_runner.py`, `legacy_model.py`, `run-legacy` CLI を `verification/` 側へ移し、検証スクリプトを `verification.smoke` / `verification.legacy_cli` 参照へ更新した。`py -m compileall src verification tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-LegacyMiniVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `legacy_adapter.py` を `context.py` の入力準備境界へ吸収して削除した。`py -m compileall src verification tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-LegacyMiniVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-09: `element_life.py` の `_crack_life_raw` 直接呼び出しを `calculate_crack_life()` 経由へ変更し、`FieldValues` 引数名と停止フラグ名を整理した。`py -m compileall src verification tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-LegacyMiniVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-10: `ElementLifeCalculator` Protocol 層を削除し、停止フラグを boolean 化し、baseline 比較スクリプトに original / candidate の所要時間表示を追加した。`py -m compileall src verification tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-LegacyMiniVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。baseline 比較の所要時間は original 00:07:37.7320795、candidate 00:08:30.5594211。
+- 2026-08-10: Stage I / Stage II 分岐を局所名で読みやすくし、`crack_life.py` / `element_life.py` の未使用 import を削除した。`py -m compileall src verification tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-LegacyMiniVerification.ps1`, `scripts/Invoke-BaselineComparison.ps1` が通過し、CSV は完全一致した。baseline 比較の所要時間は original 00:08:48.4782288、candidate 00:08:05.7056120。
+- 2026-08-10: 既存 baseline CSV を再利用して candidate だけを実行・比較する `scripts/Invoke-CandidateComparison.ps1` を追加し、`AGENTS.md` の検証ルールを更新した。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 比較の所要時間は 00:07:23.4743639。
+- 2026-08-10: particle data 生成系を `microstructure.py` へ抽出し、filename helper を明示引数化した。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-10: `FieldValuesFunction`, `MaterialDataImporter`, `AbaqusDatabaseCreator` を `BasicParameters` 全体ではなく用途別入力 dataclass を受ける形へ変更した。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-10: `BasicParameters` 旧名を `src/` から撤去し、試験片寸法、active zone、評価点生成、結晶方位生成、すべり面 resolver を `parameters.py` の独立関数へ切り出した。`context.py` は結晶方位生成とすべり面 resolver を独立関数から計算核へ渡す。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-10: `context.py` の入力組み立てを小さな helper に分け、`PaperModelParameters` から旧互換メソッドを撤去して薄い属性束へ畳み直した。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-10: `AbaqusDatabaseCreator` の cache 新規生成枝を検証した。`outputs/abaqus_cache_regen_20260810_034641` に `gData.pkl` のみを事前配置し、`N50R_CS_FieldValues.pkl` を新規生成したうえで candidate 比較を実行した。生成された pkl は 2,665,876,960 bytes、candidate 実行時間は 00:12:44.8426051、CSV は完全一致した。
+- 2026-08-10: `scripts/Compare-AbaqusCacheHash.ps1` を追加した。同一ファイル同士の SHA256 比較は通過し、legacy cache と再生成 cache の比較では legacy 2,665,876,961 bytes / `E53C7016416208950404D0065154818A3F4B6F5FA96E97AC3ED881C7DEA8DD56`、再生成 2,665,876,960 bytes / `0FABA61D682397F087D5467DE58AF17A6B65C62B6240A5923B70557DDF9464DA` の差分を検出した。
+- 2026-08-10: `tools/compare_abaqus_cache.py` と `scripts/Compare-AbaqusCacheContent.ps1` を追加した。同一ファイル同士の内部比較と、legacy cache / 再生成 cache の内部比較はいずれも通過した。比較対象は scalar、`sigma_nom_list`、`interp1d.x/y`、`LinearNDInterpolator` の `points`, `values`, `scale`, `values_shape`, `fill_value`, `is_complex`。
+- 2026-08-10: `context.py` の `params` 側 `_get(...)` fallback と `MaterialDataImporter` legacy 属性 fallback を撤去し、typed view を直接読んで `CalculationInputData` を作る形へ移行した。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。
+- 2026-08-10: `context.py` の `SimulationConfig` から `PaperModelParameters` への変換を `_build_paper_model_parameters()` に閉じ、`build_context()` の実行順を短くした。`py -m compileall src verification tools` と `scripts/Invoke-SmokeVerification.ps1` が通過した。
+- 2026-08-10: `S_*` 配列を `Result` 対応ではなく計算途中の更新単位として整理する方針へ切り替えた。`refactoring_plan.md` の Next を「計算途中の更新単位をコード上の境界として固定する」に更新し、肥大化していた `refactoring_todo.md` の完了済み細目はこの log 参照へ寄せ、次作業だけの短い todo に整理した。
+- 2026-08-10: `_crack_life_raw()` の履歴初期化、評価点ごとの履歴反映、unstable fracture 時の後続点更新、板厚到達後の後続点埋めを小関数へ分けた。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 比較の所要時間は 00:07:26.0031724。
+- 2026-08-10: `_integrate_life_cycle()` を Stage I の点更新と Stage II の3点窓更新に分け、`S_cyc0` が単純な点更新ではないことをコード構造で読めるようにした。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 比較の所要時間は 00:09:17.0366818。
+- 2026-08-10: `_evaluate_ctsd_at_crack_depth()` に重複していた CTSD 層進展ループを `_advance_ctsd_through_grain_layers()` へ集約した。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 比較の所要時間は 00:10:06.2370273。
+- 2026-08-10: `_generate_grain_boundaries()` の粒数縮小/拡張 `while True` を `_find_shrink_offset_for_grain_span()` / `_find_expand_offset_for_grain_span()` へ分けた。乱数呼び出し位置は変更していない。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 比較の所要時間は 00:12:30.1343360。
+- 2026-08-10: `element_life.py` の最短候補判定と採用処理を `_is_better_crack_candidate()` / `adopt_best_crack_candidate()` に分け、単一候補き裂の履歴と area element 内の最短候補を区別して読めるようにした。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 比較の所要時間は 00:12:02.4527880。
+- 2026-08-10: 更新単位の境界化後、`CrackGrowthHistory` や `GrainBoundaryContext` の dataclass は現時点では追加しない判断にした。mutable な計算途中状態を包むだけの抽象化になりやすく、論文実装としての単純さを下げる可能性があるため、必要性が再び出た場合は Phase Last の単純化観点で判断する。
+- 2026-08-10: `results.py` の dataclass 群を再検討し、次の焦点を result 境界の整理へ切り替えた。未使用の `OutputTables` は削除候補、`CrackLifeResult` と `crack_result_from_raw()` は calculation 内の単一候補き裂履歴として `calculation/crack_life.py` へ移す候補、`ElementLifeResult` 以降は外側へ返す結果境界として `results.py` に残す方針を plan/todo に反映した。
+- 2026-08-10: `OutputTables` を削除し、`CrackLifeResult` と raw tuple 変換を `calculation/crack_life.py` へ移動した。`CrackLifeResult` は package root の public export から外し、`results.py` は外側へ返す `ElementLifeResult`, `IterationResult`, `LoadCaseResult`, `SimulationResult` と `element_result_from_raw()` に絞った。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 比較の所要時間は 00:08:28.7377654。
+- 2026-08-10: `CrackLifeResult` を残す判断に合わせ、`element_life.py` の候補判定・採用処理とローカル crack-life wrapper のシグネチャへ `CrackLifeResult` を明示した。`calculation.__init__` からは `CrackLifeResult` を export し、package root からは引き続き外す。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 比較の所要時間は 00:08:06.2184396。
+- 2026-08-10: `calculation/` 内の主要関数と局所関数に型注釈を追加した。`CrackLifeResult`、raw tuple 境界、CTSD、K 値、closure、寿命積分、履歴更新、element 最短候補採用の入出力がシグネチャ上で追えるようにした。`py -m compileall src verification tools` と `scripts/Invoke-SmokeVerification.ps1` が通過した。
+- 2026-08-10: 型注釈の追加と、実値の型正規化は別物として扱う判断にした。Python scalar / NumPy scalar / ndarray / list / 補間器返り値の混在をそろえる作業は必要性がある一方、`float(...)`, `.item()`, `np.asarray(...)`, `list(...)` などが計算結果へ影響しうるため、`refactoring_todo.md` の保留課題として分離した。
+- 2026-08-10: `_generate_grain_boundaries()` が生成する `σ_f_List`, `rnList`, `Nd`, `PnList`, `RnAS`, `orList` を `GrainBoundaryData` にまとめ、CTSD 評価関数へ組で渡す形にした。mutable な履歴配列や CTSD 層進展中の作業状態は束ねていない。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 比較の所要時間は 00:08:18.4758261。
+- 2026-08-10: `_element_life_raw()` の戻り値を raw tuple から `ElementLifeResult` に変更し、`calculate_element_life()` から `element_result_from_raw()` 変換を外した。検証用 `legacy_model.ElementLife()` では旧 tuple 互換を維持し、smoke fixture も `ElementLifeResult` を直接返す形にした。未使用になった `element_result_from_raw()` は削除した。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 比較の所要時間は 00:08:10.6578565。
+- 2026-08-10: 結果型の置き場について、`results.py` に集約するのではなく、生成する計算単位の近くへ移す方針に切り替えた。計画は `CrackLifeResult` を `crack_life.py`、`ElementLifeResult` を `element_life.py`、`IterationResult` / `LoadCaseResult` を `load_case.py`、`SimulationResult` を `runner.py` に置く案 B とし、`refactoring_plan.md` と `refactoring_todo.md` に反映した。
+- 2026-08-10: 結果型を生成する計算単位の近くへ移す案 B を実施した。`ElementLifeResult` は `calculation/element_life.py`、`IterationResult` / `LoadCaseResult` は `calculation/load_case.py`、`SimulationResult` は `runner.py` へ移動し、参照がなくなった `results.py` は削除した。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 比較の所要時間は 00:07:44.4722510。
+- 2026-08-10: Phase Last 入り前の節目として `scripts/Invoke-BaselineComparison.ps1` を実行した。旧実装と `src` の CSV は完全一致した。所要時間は original 00:08:20.2057810、candidate 00:09:12.5877025。
+- 2026-08-10: `refactoring_todo.md` の Current Focus を Phase Last: 研究者向け単純化へ切り替えた。`code_reading_difficulties.md` はレビュワー視点の記録として開発作業中には修正しない方針を明記し、要確認・乱数順序・結果安全性の保留項目は Phase Last の修正対象から分離した。
+- 2026-08-10: Phase Last の初回棚卸を実施した。`README.md` の削除済み `results.py` 参照を現在の result 配置に合わせて修正し、`output.py` の材料強度 legacy fallback を通常経路の typed view 参照へ単純化し、`runner.py` の import を整理した。`context.py` と `calculation/inputs.py` は現時点では維持、`crack_life.py` の helper は物理単位に沿っているため畳まない判断にした。`py -m compileall src verification tools` と `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 比較の所要時間は 00:07:47.3860118。
+- 2026-08-10: Phase Last の残課題として、`pyproject.toml` で console script が公開されている一方で `cli.py` が通常実行を起動しない未実装入口である点を追加した。`element_life.py` の出口付近の局所名整理は非本質的なため実施しない判断にした。
+- 2026-08-10: `cli.py` を通常実行入口として実装した。`run` サブコマンドは `SimulationConfig -> build_context -> build_calculation_input_data -> build_output_context -> run_simulation` の既存経路だけを呼び、legacy 比較は従来どおり `verification.legacy_cli` 側に残す。CLI 経由の軽量実行確認用に `scripts/Invoke-CliSmokeVerification.ps1` を追加した。
+- 2026-08-10: CLI 実装後の検証として `py -m compileall src verification tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CliSmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` を実行し、すべて通過した。candidate 比較は既存 baseline CSV との完全一致を確認した。
+- 2026-08-10: 検証経路を通常 CLI へ寄せるため、`Invoke-CandidateComparison.ps1` と `Invoke-BaselineComparison.ps1` の refactored 側実行を `verification.legacy_cli run-legacy` から `multiscale_fatigue_model_ijf_2026.cli run` へ切り替えた。`Invoke-LegacyMiniVerification.ps1` は legacy shim 自体の検証として残す。
+- 2026-08-10: CLI 経由へ寄せた後の検証として `py -m compileall src verification tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` を実行し、すべて通過した。candidate 比較は既存 baseline CSV との完全一致を確認した。candidate 所要時間は 00:07:53.4471353。
+- 2026-08-10: `scripts/Invoke-CliSmokeVerification.ps1` は `Invoke-CandidateComparison.ps1` と役割が重複し、結果同一性保証としても弱いため削除した。通常 CLI 経由の実計算確認は candidate 比較に一本化する。
+- 2026-08-10: `Invoke-CandidateComparison.ps1` と `Invoke-BaselineComparison.ps1` に `-CandidateRoute cli|verification` を追加した。既定値は `cli` とし、切り分け時のみ `verification` を明示して legacy shim 経由の candidate 実行を確認できるようにした。route 分岐は `scripts/` に限定し、通常 CLI と `src/` 側には入れていない。
+- 2026-08-10: route switch 追加後、`py -m compileall src verification tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1 -CandidateRoute cli`, `scripts/Invoke-CandidateComparison.ps1 -CandidateRoute verification -CandidateDir outputs\candidate_verification_route_seed42` を実行し、すべて通過した。どちらの candidate route も既存 baseline CSV と完全一致した。
+- 2026-08-10: `verification/legacy_cli.py` と `verification/legacy_runner.py` は旧実装実行ではなく `SimulationContext` adapter route だったため、`verification/context_adapter_cli.py` と `verification/context_adapter_runner.py` へ改名した。`scripts/Invoke-LegacyMiniVerification.ps1` も `scripts/Invoke-ContextAdapterMiniVerification.ps1` へ置き換えた。`LegacyRunConfig` alias は `SimulationConfig` に一本化して削除した。
+- 2026-08-10: verification 整理後の検証として `py -m compileall src verification tools`, `scripts/Invoke-SmokeVerification.ps1`, `python -m verification.context_adapter_cli --help`, `scripts/Invoke-ContextAdapterMiniVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1 -CandidateRoute verification -CandidateDir outputs\candidate_context_adapter_route_seed42` を実行し、すべて通過した。context adapter route の candidate CSV は既存 baseline CSV と完全一致した。
+- 2026-08-11: context adapter route は旧実装そのものではなく、`src` 内の別入口を検証しているだけなので Phase Last の単純化対象として削除方向に切り替えた。`refactoring_todo.md` は context adapter route、route switch、`run_simulation_from_context()`、未使用なら `verification/legacy_model.py` を棚卸する計画へ更新した。
+- 2026-08-11: Phase Last の単純化として context adapter route を削除した。`verification/context_adapter_cli.py`, `verification/context_adapter_runner.py`, `scripts/Invoke-ContextAdapterMiniVerification.ps1`, `verification/legacy_model.py`, `runner.py` の `run_simulation_from_context()` を削除し、candidate / baseline 比較 script は通常 CLI 実行に一本化した。`py -m compileall src verification tools`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` が通過し、candidate CSV は既存 baseline CSV と完全一致した。candidate 所要時間は 00:07:09.9978227。
+- 2026-08-11: `Any` 注釈を洗い出し、型が確定している境界を具体化した。`calculation/inputs.py` に `Number`, `NumericValue`, `NumericHistory`, `LocationYZ`, `StressTensor`, `FieldValueProvider` を追加し、`load_case.py`, `element_life.py`, `crack_life.py` の result dataclass 境界、`output._pad_list()`, `tools/compare_abaqus_cache.py` を更新した。`crack_life.py` 内部の数値式は Python scalar / NumPy scalar / ndarray / SciPy 返り値が混在するため、結果安全性の観点から `Any` を残した。`py -m compileall src verification tools` と `scripts/Invoke-SmokeVerification.ps1` は通過した。
+- 2026-08-11: 検証専用だった `tools/` を `verification/` に吸収した。`compare_csv_outputs.py`, `validate_output_csv.py`, `compare_abaqus_cache.py` を移動し、PowerShell script は `python -m verification...` 経由へ更新した。旧 `tools/` は生成物だけになったため削除した。`py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `.venv\Scripts\python.exe -m verification.compare_abaqus_cache --help`, `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 所要時間は 00:07:00.8860634。
+- 2026-08-11: サンプル実行用に `resources/` を新設し、`N50R_CS_T50.inp`, `N50R_CS_T50.dat`, 材料・粒径系 CSV, `CombinedData_Ellipse_WF_CF.json` を配置した。cache 生成物の `.pkl` と計算結果 CSV は含めていない。`--base-dir resources --cache-dir multiscale-fatigue-model` の軽量実行は通過し、既存 baseline CSV と完全一致した。手順として `scripts/Invoke-SampleResourcesRun.ps1` を追加し、同 script 経由の CSV validation も通過した。
+- 2026-08-11: `MaterialDataImporter` の公開面を再検討した。研究者が通常読むべき公開面は `grain_distributions`, `mechanical_properties`, `abaqus_field_cache`, `weight_function_resources`, `microstructure_data` の5つの typed view に限定し、`FirstGrainDF`, `σ_fF`, `EES`, `WFClist`, `gData` などの旧名属性は view 構築のための内部作業状態として小分けに private 化または局所変数化する方針を plan/todo に反映した。
+- 2026-08-11: `FieldValuesFunction` の `MaterialDataImporter` 旧名属性 fallback を削除し、`abaqus_field_cache` view だけを読む形にした。`MaterialDataImporter` の旧名作業属性は private 名へ寄せ、未使用の `DataEES` / `FData*` / `values` スロットを削除した。外部参照は5つの typed view に限定されていることを確認した。`py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 所要時間は 00:08:25.6253711。
+- 2026-08-11: `_initialize_legacy_attribute_slots()` の位置づけを再検討した。現在は legacy 公開属性ではなく内部作業属性の `None` 事前宣言になっているため、Python コードとしても研究者向けの読み筋としても削除し、各 `_load_*` / `_build_*` の生成箇所で初めて代入する方針を plan/todo に反映した。
+- 2026-08-11: `MaterialDataImporter._initialize_legacy_attribute_slots()` を削除した。内部作業属性は生成される `_load_*` / `_build_*` 内で代入し、条件分岐で未生成になりうる second grain / pearlite / weight-function RBF だけ生成関数内で既定値を明示した。Gauss 10点は importer 状態ではなく `GAUSS_WEIGHTS_10` / `GAUSS_POINTS_10` のモジュール定数へ移した。`py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 所要時間は 00:08:20.6448371。
+- 2026-08-11: `_crack_life_raw()` の `r1, rt1 = _initial_crack_dimensions(...)` 重複実行を確認した。1回目を削除すると candidate 比較で CSV が変わったため、`_initial_crack_dimensions()` 内の `random.random()` 消費が legacy 乱数順序に必要と判断し、discard として明示して維持した。`_generate_grain_boundaries()` 内の `ff00` 再生成は、引数で渡された関数を同一入力で作り直すだけの冗長処理として削除した。残る CTSD 初期化重複、stress state 分岐内の `Δσ` 生成重複、unstable fracture 履歴更新の意図は todo の要確認項目に記録した。`py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 所要時間は 00:08:13.0534570。
+- 2026-08-11: CTSD 計算内の `jj` を `crack_tip_layer_index` へリネームし、`jj == 1` 分岐は `crack_tip_in_first_grain` として意味名を付けた。`t_List`, `τ_List`, `σ_fr` の共通初期化は分岐前へ移動した。1-based index は legacy CTSD 粒界式の添字として維持し、0-based 化は保留課題に残した。`py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 所要時間は 00:06:44.1279662。
+- 2026-08-11: CTSD のき裂先端層添字は `_evaluate_ctsd_at_crack_depth()` と `_advance_ctsd_through_grain_layers()` に閉じていることを再確認し、1-based の `crack_tip_layer_index` から 0-based の `crack_tip_layer_idx` へ変更した。`rnList`, `PnList`, `RnAS`, `Nd` の `-1` 補正を削減し、`crack_tip_in_first_grain = crack_tip_layer_idx == 0` として読めるようにした。`py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` が通過し、CSV は完全一致した。candidate 所要時間は 00:07:01.1940075。
+- 2026-08-11: `cli.py` の通常実行引数を実行管理項目へ絞り、材料、seed、応力、iteration などのシミュレーション条件は JSON 設定ファイルから読む形にした。`verification/configs/lightweight_seed42.json` と `resources/sample_simulation.json` を追加し、candidate / baseline / sample scripts は設定ファイルを受け取る形へ更新した。`py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1`, `scripts/Invoke-SampleResourcesRun.ps1` が通過し、candidate CSV は既存 baseline CSV と完全一致した。candidate 所要時間は 00:07:14.3296512。
+- 2026-08-11: `field_values.py` の旧応力場参照名を棚卸し、計算核が使う total field 参照に `active_element_total_field_by_depth()` と `active_surface_total_field_by_nominal_stress()` を追加した。旧 `FieldValues_ACTIVE_Numpy()` / `FieldValues_ACTIVE_x0()` は互換 wrapper の内側に残し、`calculation/` 側は意味名を呼ぶ形へ移行した。`py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` が通過し、candidate CSV は既存 baseline CSV と完全一致した。candidate 所要時間は 00:07:04.0309171。
+- 2026-08-11: JSON config の期待項目を `config.py` の `SIMULATION_CONFIG_KEYS` にまとめ、試験片・材料条件、き裂進展定数、再現性と load-case loop、軽量検証 limiter のまとまりがコード側で読めるようにした。README は詳細表を増やさず、設定ファイル例への参照だけを追記した。`py -m compileall src verification` と `scripts/Invoke-SmokeVerification.ps1` が通過した。
+- 2026-08-11: README に実行階層の短い地図を追加した。`runner.py` の nominal stress loop、`load_case.py` の iteration / active area element / symmetry loop、`element_life.py` の candidate crack 評価、`crack_life.py` の crack-growth point 評価の対応を示すだけに留め、詳細な対応表は増やしていない。`py -m compileall src verification` と `scripts/Invoke-SmokeVerification.ps1` が通過した。
+- 2026-08-11: `GrainBoundaryData` の型注釈と docstring を見直し、legacy の `rnList`, `Nd`, `PnList`, `RnAS`, `orList` が粒界深さ、層ごとの粒数、隣接粒ペア、層間分率、方位に対応することをコード側で読めるようにした。CTSD 評価側では旧名の局所 alias をやめ、`boundary_depths`, `grains_per_depth_layer`, `adjacent_grains_by_layer`, `boundary_fraction_by_layer`, `first_grain_index_in_layer` へ置き換えた。`py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` が通過し、candidate CSV は既存 baseline CSV と完全一致した。candidate 所要時間は 00:07:03.8116490。
+- 2026-08-11: Stage I / Stage II と停止条件の分岐名を小さく整理した。NaN debug 用の `mark1111` は `stress_state_branch` へ置き換え、分岐ラベルを `stage2_weight_function`, `stage2_depth_capped_weight_function`, `stage1_weight_function`, `initial_surface_field` とした。主ループでは `stop_due_to_ctsd_evaluation`, `stop_due_to_life_integration_limit`, `ctsd_below_stage2_threshold`, `through_thickness_stage2_window` を導入し、break の理由を読めるようにした。`py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` が通過し、candidate CSV は既存 baseline CSV と完全一致した。candidate 所要時間は 00:06:59.2262671。
+- 2026-08-15: `Multiscale_fatigue_model.org.py` の既定条件を、現行 `Multiscale_fatigue_model.py` と `src` の両方で再現して比較する検証ルートを追加した。`verification/configs/original_defaults_seed42.json` は `.org.py` の `sigma_nom=[150,160,170,180,190]`, `iterations=[0,1,2,3]`, `n_symm=4` を明示し、seed は比較再現性のため 42 とした。`scripts/Invoke-OriginalConditionComparison.ps1` は出力先を既存軽量 baseline と分け、CSV 比較まで行う。フル条件は重いため、この時点では `py -m compileall src verification`, JSON parse, PowerShell parse のみ確認した。
+- 2026-08-15: README などで示す通常の既定パラメータは `Multiscale_fatigue_model.org.py` に準じる方針へ修正した。通常実行例は `verification/configs/original_defaults_seed42.json` を使う形にし、`src` の `PaperModelParameters` 未指定時既定値も `.org.py` と同じ `sigma_nom=np.arange(150,200,10)`, `iteration_num=np.arange(0,4,1)`, `n_symm=4` に戻した。軽量条件は `lightweight_seed42.json` / `sample_simulation.json` の明示 config として扱う。
+- 2026-08-15: 通常実行用の `verification/configs/original_defaults.json` を追加し、README の通常実行例を random seed 未指定に戻した。seed 固定の `original_defaults_seed42.json` は比較検証用として残し、軽量検証・サンプル実行の seed 固定 config と通常既定値を分離した。
+- 2026-08-16: 既存出力 CSV を削除する CLI オプション名を、曖昧な `--clean-output` から `--delete-existing-output` へ変更した。内部の `SimulationConfig.clean_output` も `delete_existing_output` へ改名し、README、summary、plan、PowerShell scripts を更新した。`py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `.venv\Scripts\python.exe -m multiscale_fatigue_model_ijf_2026.cli run --help`, `scripts/Invoke-CandidateComparison.ps1` が通過し、candidate CSV は既存 baseline CSV と完全一致した。candidate 所要時間は 00:08:54.7490861。
+- 2026-08-16: Pylance 指摘により、`crack_life.py` の `_evaluate_ctsd_at_crack_depth()` に旧名 `rnList[0]` が1箇所残っていることを確認した。`GrainBoundaryData.boundary_depths` への移行漏れであり、同じ関数内で定義済みの `boundary_depths[0]` へ修正した。既存検証で発見できなかった理由は、この分岐が軽量 smoke / candidate 条件で実行されず、`compileall` は関数内の未到達分岐にある未定義名を検出しないためである。`.venv` には `pyflakes` / `ruff` が入っていないことも確認した。`py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` は通過し、candidate CSV は既存 baseline CSV と完全一致した。candidate 所要時間は 00:09:49.0865434。
+- 2026-08-16: 静的解析として `ruff` を dev dependency に追加し、既存コードのスタイル一括修正を避けるため `F821` の未定義名検出だけを有効にした。`scripts/Invoke-StaticAnalysis.ps1` を追加し、通常の1タスク検証手順に `py -m compileall src verification`, `scripts/Invoke-StaticAnalysis.ps1`, `scripts/Invoke-SmokeVerification.ps1` を使う方針へ更新した。`AGENTS.md` も、完了ごとに静的解析と軽量検証を実施する表現へ更新した。追加後の `scripts/Invoke-StaticAnalysis.ps1`, `py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1` は通過した。
+- 2026-08-16: `ruff` の対象を `F821` から Pyflakes 由来の `F` 系全体へ拡大した。指摘された未使用 import / 未使用ローカルとして、`crack_life.py` の `skip`, `field_values.py` の未使用 `brentq`, `thickness`, `AeNum`, `verification/smoke.py` の未使用 `config` を削除した。`scripts/Invoke-StaticAnalysis.ps1`, `py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` は通過し、candidate CSV は既存 baseline CSV と完全一致した。candidate 所要時間は 00:07:26.7280907。
+- 2026-08-16: `ruff` の対象へ `E9` と `I` を追加し、`select = ["E9", "F", "I"]` とした。`I` の import sort 指摘は `ruff check --select I --fix` で修正した。`scripts/Invoke-StaticAnalysis.ps1`, `py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` は通過し、candidate CSV は既存 baseline CSV と完全一致した。candidate 所要時間は 00:09:27.8661400。
+- 2026-08-16: 計算結果を変えない高速化として、`_integrate_k_stage1()` / `_integrate_k_stage2()` 内で Gauss 点ごとの `active_element_total_field_by_depth()` 参照を成分ループの外に出し、同一 Gauss 点の field lookup を1回だけ行う形にした。weight function 補間 cache は浮動小数 key と補間器返り値により結果差が出る可能性があるため、計算結果変更を許容する保留課題として `refactoring_todo.md` に記録した。`scripts/Invoke-StaticAnalysis.ps1`, `py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` は通過し、candidate CSV は既存 baseline CSV と完全一致した。candidate 所要時間は 00:07:29.1889031。
+- 2026-08-16: closure 計算内の `HysterisisA(y, z)` を、`crack_life.py` 内の `_surface_reference_principal_stress()` helper として切り出し、candidate crack 内で1回だけ計算して `_calculate_closure_factor()` へ渡す形にした。`field_values.py` へは移さず、closure モデル側の基準主応力計算として `crack_life.py` に残した。`scripts/Invoke-StaticAnalysis.ps1`, `py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` は通過し、candidate CSV は既存 baseline CSV と完全一致した。candidate 所要時間は 00:07:45.5415692。
+- 2026-08-16: 外部 config の `iterations` 配列を `iteration_count` に変更した。`src` 内部では旧実装互換の `iteration_num=np.arange(0, iteration_count, 1)` を生成し、legacy script 比較用 PowerShell では `MFM_ITERATIONS=0,1,...` に展開するため、CSV 形式は維持する。detail CSV ファイル名が 0-based、summary CSV の `Iteration` 列が 1-based である点は挙動変更せず、要確認項目として `refactoring_todo.md` に記録した。`scripts/Invoke-StaticAnalysis.ps1`, `py -m compileall src verification`, JSON parse, `scripts/Invoke-SmokeVerification.ps1`, `scripts/Invoke-CandidateComparison.ps1` は通過し、candidate CSV は既存 baseline CSV と完全一致した。candidate 所要時間は 00:09:37.9040379。
+- 2026-08-16: `resources/sample_simulation.json` を軽量設定から `.org.py` 準拠の通常設定へ変更した。`random_seed` と `max_active_elements` は外し、`sigma_nom=[150,160,170,180,190]`, `iteration_count=4`, `n_symm=4` とした。`scripts/Invoke-SampleResourcesRun.ps1` は seed 未指定 config でも既定出力先 `outputs/sample_resources/` を使えるようにした。sample 本体は通常設定で重いため実行せず、JSON parse, `scripts/Invoke-StaticAnalysis.ps1`, `py -m compileall src verification`, `scripts/Invoke-SmokeVerification.ps1` を確認した。
+- 2026-08-17: 重すぎる original condition comparison は `scripts/Invoke-HeavyComparison.ps1` と `verification/configs/heavy_seed42.json` に整理した。README、summary、todo、plan の現行案内を新名へ揃えた。

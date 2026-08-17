@@ -1,0 +1,17 @@
+{
+  "steel": "N50R",
+  "specimen_type": "CS",
+  "thickness_sign": "T50",
+  "crystal": "BCC",
+  "r_ratio": -1,
+  "c_paris": 18,
+  "n_paris": 1.8,
+  "delta_delta_th": 0.000063,
+  "random_seed": 42,
+  "sigma_nom": [
+    150,
+    190
+  ],
+  "iteration_count": 1,
+  "n_symm": 4
+}

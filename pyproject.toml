@@ -1,0 +1,29 @@
+[project]
+name = "multiscale-fatigue-model-ijf-2026"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Yusuke Soraji", email = "toiro.gah@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy<2.0",
+    "pandas>=2.3.3",
+    "scipy>=1.17.1",
+]
+
+[project.scripts]
+multiscale-fatigue-model-ijf-2026 = "multiscale_fatigue_model_ijf_2026:main"
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.16.3",
+]
+
+[tool.ruff.lint]
+select = ["E9", "F", "I"]
