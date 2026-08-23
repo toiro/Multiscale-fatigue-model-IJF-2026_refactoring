@@ -8,11 +8,11 @@
 
 ## 重大度 高
 
-現状では、`steel` / `specimen_type` / `thickness_sign` の入口説明と主要な条件解決は改善されており、重大度「高」として残る読解上の障害は限定的である。
+現状では、`steel` / `specimen_type` / `thickness_sign` の入口説明、主要な条件解決、通常計算用 config の導線は改善されており、重大度「高」として残る読解上の障害は見当たらない。
 
 README には、`steel` が材料ラベル、`specimen_type` が試験片または荷重形状、`thickness_sign` が論文実装由来の板厚ラベルであることが説明されている。また、実際に使われる寸法、active zone、評価点、cache key、weight-function family、Abaqus nominal stress extraction mode は `parameters.resolve_parameter_condition()` で組み立てられることも示されている。
 
-そのため、前回まで問題だった「略号の存在は分かるが、入口で何を表すか分からない」という障害は大きく下がっている。
+さらに、`resources/` 内の各条件を通常計算するための config は `resources/configs/` に揃えられ、軽量検証用 config は `verification/configs/conditions/` に分けて置かれている。そのため、前回まで問題だった「どの JSON が通常計算用なのか分かりにくい」という障害も大きく下がっている。
 
 ## 重大度 中
 
@@ -50,7 +50,7 @@ README にはこの cache 命名規則の説明がある。ただし、材料 CS
 
 ## 重大度 低
 
-### 6. 新しい config 名と旧実装由来の内部名が併存している
+### 5. 新しい config 名と旧実装由来の内部名が併存している
 
 JSON config では `specimen_type` / `thickness_sign` として指定し、`PaperModelParameters` にも同名の属性がある。
 
@@ -58,7 +58,7 @@ JSON config では `specimen_type` / `thickness_sign` として指定し、`Pape
 
 現状では新しい名前が主導になっているため大きな障害ではないが、初見では同じ概念に複数の名前があるように見える。
 
-### 7. Abaqus nominal stress 抽出の分岐は mode 化されたが、周辺には旧名の痕跡が残る
+### 6. Abaqus nominal stress 抽出の分岐は mode 化されたが、周辺には旧名の痕跡が残る
 
 Abaqus field cache 生成では、`NominalStressExtractionMode` によって `Smooth`、3点曲げ、compact specimen の nominal stress 抽出経路を選ぶ形に整理されている。
 
@@ -66,7 +66,7 @@ Abaqus field cache 生成では、`NominalStressExtractionMode` によって `Sm
 
 そのため、主要な分岐は読みやすくなっているが、周辺の表示や診断文を読むときには旧実装由来の語彙が混じる。
 
-### 8. 条件ディレクトリの自動選択は互換挙動を含んでいる
+### 7. 条件ディレクトリの自動選択は互換挙動を含んでいる
 
 README には、`--base-dir resources` を使うと一致する condition directory が選ばれることが書かれている。
 
@@ -74,7 +74,7 @@ README には、`--base-dir resources` を使うと一致する condition direct
 
 この互換挙動は legacy 入力ディレクトリ指定を保つために残っている。入力ファイル名そのものに親ディレクトリ fallback は無いが、条件ディレクトリが選ばれるかどうかは `paths.py` と `context.py` を確認する必要がある。
 
-### 9. `steel` が材料条件と計算領域条件の両方に効く
+### 8. `steel` が材料条件と計算領域条件の両方に効く
 
 `steel` は材料 CSV、摩擦強度、引張特性などの材料データ選択に使われる。
 
@@ -122,8 +122,6 @@ README には、FieldValues と生成微視組織 cache が `steel + specimen_ty
 
 また、追加条件を重い寿命計算の前に確認するための condition preflight への導線も追加されている。これにより、条件ディレクトリ、必須入力ファイル、軽量 config、context 境界解決の確認手段は以前より見つけやすくなっている。
 
-ただし、この導線は軽量検証としては有効である一方、resources 内の各条件を通常計算として実行する手順とは分けて読める必要があった。
-
 ### 通常計算 config と軽量検証 config の分離
 
 以前は `resources/` 内の各条件を通常計算するための JSON config が揃っておらず、`resources/sample_simulation.json` や `verification/configs/conditions/lightweight_*.json` の位置づけが混ざって見えやすかった。
@@ -131,3 +129,5 @@ README には、FieldValues と生成微視組織 cache が `steel + specimen_ty
 現在は、通常計算用 config を `resources/configs/<condition>.json` に置き、軽量検証用 config は `verification/configs/conditions/lightweight_<condition>.json` に置く形へ分離している。
 
 `verification.check_resources` でも、10条件分の通常 config が揃っていること、通常 config に `random_seed` や `max_active_elements` が混入していないことを確認する。
+
+これにより、研究者が `resources/` 内の各条件を通常計算として実行する場合は `resources/configs/` を見ればよく、短時間の開発確認では `verification/configs/conditions/` を見る、という役割分担が読み取りやすくなっている。
