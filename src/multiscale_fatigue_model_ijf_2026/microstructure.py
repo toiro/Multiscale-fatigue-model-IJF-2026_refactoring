@@ -56,7 +56,7 @@ def generate_particle_data(
         g_data_path=g_data_path,
     )
     grain_layers, grains_per_layer = _estimate_model_size(
-        steel=steel,
+        specimen_type=specimen_type,
         thickness=thickness,
         pearlite_rate_normalized=pearlite_rate_normalized,
         first_grain_cdf=first_grain_cdf,
@@ -111,7 +111,9 @@ def _load_or_create_grain_data(
         with open(g_data_path, "rb") as file:
             generated_grain_data = pickle.load(file)
             print("Finish loading gData.pkl", datetime.datetime.now())
-        return generated_grain_data
+        if _is_valid_grain_data(generated_grain_data):
+            return generated_grain_data
+        print("Cached gData.pkl is invalid; regenerating.", datetime.datetime.now())
 
     print("Start generating gData.pkl", datetime.datetime.now())
     n_data = 1000000
@@ -167,6 +169,16 @@ def _load_or_create_grain_data(
     return generated_grain_data
 
 
+def _is_valid_grain_data(generated_grain_data) -> bool:
+    if not generated_grain_data:
+        return False
+    sample = generated_grain_data[:100]
+    return all(
+        row is not None and hasattr(row, "__len__") and len(row) == 3
+        for row in sample
+    )
+
+
 def _make_particle_entry(
     r,
     d,
@@ -198,6 +210,23 @@ def _make_particle_entry(
                     )
                 ),
             ]
+        return [
+            ferrite_friction_strength,
+            d
+            * np.sqrt(
+                np.sqrt(
+                    (np.sin(ang) ** 2 + ra**4 * np.cos(ang) ** 2)
+                    / (np.cos(ang) ** 2 + ra**4 * np.sin(ang) ** 2)
+                )
+            ),
+            d
+            * np.sqrt(
+                np.sqrt(
+                    (np.cos(ang) ** 2 + ra**4 * np.sin(ang) ** 2)
+                    / (np.sin(ang) ** 2 + ra**4 * np.cos(ang) ** 2)
+                )
+            ),
+        ]
     elif specimen_type == "CS":
         return [
             pearlite_friction_strength,
@@ -226,12 +255,38 @@ def _make_particle_entry(
                 )
             ),
         ]
-    return None
+    return [
+        pearlite_friction_strength,
+        math.sqrt(
+            t
+            * d
+            * ra
+            * math.sqrt(
+                (t**2 * math.sin(ang) ** 2 + d**2 * ra**2 * math.cos(ang) ** 2)
+                / (
+                    t**2 * math.cos(ang) ** 2
+                    + d**2 * ra**2 * math.sin(ang) ** 2
+                )
+            )
+        ),
+        math.sqrt(
+            t
+            * d
+            * ra
+            * math.sqrt(
+                (t**2 * math.cos(ang) ** 2 + d**2 * ra**2 * math.sin(ang) ** 2)
+                / (
+                    t**2 * math.sin(ang) ** 2
+                    + d**2 * ra**2 * math.cos(ang) ** 2
+                )
+            )
+        ),
+    ]
 
 
 def _estimate_model_size(
     *,
-    steel: str,
+    specimen_type: str,
     thickness: float,
     pearlite_rate_normalized: float,
     first_grain_cdf,
@@ -250,7 +305,7 @@ def _estimate_model_size(
     ]
     area_samples = part1 + part2
 
-    area_factor = 6 if steel == "Smooth" else 3
+    area_factor = 6 if specimen_type == "Smooth" else 3
     grains_per_layer = round(area_factor * ((2 * thickness**2) / np.mean(area_samples)))
 
     # Random sampling: mean through-thickness grain size estimate.

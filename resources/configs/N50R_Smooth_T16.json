@@ -1,0 +1,13 @@
+{
+  "steel": "N50R",
+  "specimen_type": "Smooth",
+  "thickness_sign": "T16",
+  "crystal": "BCC",
+  "r_ratio": -1,
+  "c_paris": 18,
+  "n_paris": 1.8,
+  "delta_delta_th": 0.000063,
+  "sigma_nom": [150, 160, 170, 180, 190],
+  "iteration_count": 4,
+  "n_symm": 4
+}

@@ -23,6 +23,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 from scipy.interpolate import RBFInterpolator
 
 from .microstructure import MicrostructureGeneratedData, generate_particle_data
+from .parameters import WeightFunctionTableFamily
 from .paths import (
     field_values_filename,
     first_grain_angle_filename,
@@ -76,6 +77,7 @@ GAUSS_POINTS_10 = np.array(
 class MaterialImportInput:
     steel: str
     specimen_type: str
+    weight_function_table_family: WeightFunctionTableFamily
     thickness: float
     active_element_area: float
     first_grain: str
@@ -138,9 +140,7 @@ class WeightFunctionResources:
 
     secant_ellipse: object
     weight_function_constants: object
-    weight_function_rbf: object
-    weight_function_rbf_low: object
-    weight_function_rbf_high: object
+    stage2_weight_function: object
     gauss_weights_10: np.ndarray
     gauss_points_10: np.ndarray
     remote_stress_constants: object
@@ -277,6 +277,7 @@ class MaterialDataImporter:
     def _build_weight_function_resources(self):
         self._load_weight_function_constants()
         self._build_weight_function_interpolator()
+        self._build_stage2_weight_function()
         self._load_remote_stress_constants()
 
     def _build_microstructure_data(self):
@@ -363,9 +364,7 @@ class MaterialDataImporter:
         return WeightFunctionResources(
             secant_ellipse=self._secant_ellipse,
             weight_function_constants=self._weight_function_constants,
-            weight_function_rbf=getattr(self, "_weight_function_rbf", None),
-            weight_function_rbf_low=self._weight_function_rbf_low,
-            weight_function_rbf_high=self._weight_function_rbf_high,
+            stage2_weight_function=self._stage2_weight_function,
             gauss_weights_10=GAUSS_WEIGHTS_10,
             gauss_points_10=GAUSS_POINTS_10,
             remote_stress_constants=self._remote_stress_constants,
@@ -488,21 +487,18 @@ class MaterialDataImporter:
             Ellipse_WF_CF = json.load(json_file1)
 
         ldh = Ellipse_WF_CF["ldh"]
-        WFCsmooth = Ellipse_WF_CF["WFCsmooth"]
-        WFC3PBT = Ellipse_WF_CF["WFC3PBT"]
-        WFCCS = Ellipse_WF_CF["WFCCS"]
         # Creating Interpolation Functions
         x_values = [item[0] for item in ldh]
         y_values = [item[1] for item in ldh]
         self._secant_ellipse = interpolate.interp1d(x_values, y_values)
 
         # Calculation of K-values via weight functions
-        if self.input.specimen_type in ["Smooth"]:
-            self._weight_function_constants = WFCsmooth
-        elif self.input.specimen_type in ["R008", "R100"]:
-            self._weight_function_constants = WFC3PBT
-        elif self.input.specimen_type in ["CS", "CSS"]:
-            self._weight_function_constants = WFCCS
+        self._weight_function_constants = _select_by_weight_function_family(
+            self.input.weight_function_table_family,
+            smooth=Ellipse_WF_CF["WFCsmooth"],
+            three_point_bending=Ellipse_WF_CF["WFC3PBT"],
+            compact_specimen=Ellipse_WF_CF["WFCCS"],
+        )
 
     def _build_weight_function_interpolator(self):
         self._weight_function_rbf: object | None = None
@@ -517,7 +513,7 @@ class MaterialDataImporter:
         ac_values = np.array(ac_values)
         values = np.array(values)
 
-        if np.max(at_ac_values) > 0.8:
+        if np.max(at_values) > 0.8:
             mask_low = at_values <= 0.8
             mask_high = at_values >= 0.6
 
@@ -544,6 +540,27 @@ class MaterialDataImporter:
                 epsilon=1,
             )
 
+    def _build_stage2_weight_function(self):
+        if self._weight_function_rbf is not None:
+
+            def stage2_weight_function(at: float, ac: float):
+                return self._weight_function_rbf([[at, ac]])[0]
+
+        elif (
+            self._weight_function_rbf_low is not None
+            and self._weight_function_rbf_high is not None
+        ):
+
+            def stage2_weight_function(at: float, ac: float):
+                if at <= 0.6:
+                    return self._weight_function_rbf_low([[at, ac]])[0]
+                return self._weight_function_rbf_high([[at, ac]])[0]
+
+        else:
+            raise ValueError("Stage II weight-function RBF was not built.")
+
+        self._stage2_weight_function = stage2_weight_function
+
     def _qq(self, n):
         if n <= 1:
             return 1 + 1.464 * n**1.65
@@ -553,16 +570,12 @@ class MaterialDataImporter:
     def _load_remote_stress_constants(self):
         with open(self._input_path(weight_function_constants_filename())) as json_file1:
             Ellipse_WF_CF = json.load(json_file1)
-        # Extracting data for different variables
-        CFsmooth = Ellipse_WF_CF["CFsmooth"]
-        CF3PBT = Ellipse_WF_CF["CF3PBT"]
-        CFCS = Ellipse_WF_CF["CFCS"]
-        if self.input.specimen_type in ["Smooth"]:
-            self._remote_stress_constants = CFsmooth
-        elif self.input.specimen_type in ["R008", "R100"]:
-            self._remote_stress_constants = CF3PBT
-        elif self.input.specimen_type in ["CS", "CSS"]:
-            self._remote_stress_constants = CFCS
+        self._remote_stress_constants = _select_by_weight_function_family(
+            self.input.weight_function_table_family,
+            smooth=Ellipse_WF_CF["CFsmooth"],
+            three_point_bending=Ellipse_WF_CF["CF3PBT"],
+            compact_specimen=Ellipse_WF_CF["CFCS"],
+        )
 
         # Calculate CFlist2
         points = [(row[0], row[1]) for row in self._remote_stress_constants]
@@ -580,5 +593,21 @@ class MaterialDataImporter:
 
     def _cache_path(self, filename: str) -> Path:
         return resolve_cache_path(self.cache_dir, filename)
+
+
+def _select_by_weight_function_family(
+    family: WeightFunctionTableFamily,
+    *,
+    smooth: object,
+    three_point_bending: object,
+    compact_specimen: object,
+) -> object:
+    if family == WeightFunctionTableFamily.SMOOTH:
+        return smooth
+    if family == WeightFunctionTableFamily.THREE_POINT_BENDING:
+        return three_point_bending
+    if family == WeightFunctionTableFamily.COMPACT_SPECIMEN:
+        return compact_specimen
+    raise NotImplementedError(f"Unsupported weight-function table family: {family!r}")
 
 

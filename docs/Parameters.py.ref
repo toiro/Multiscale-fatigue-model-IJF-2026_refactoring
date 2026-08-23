@@ -1,0 +1,168 @@
+import os  # The os library is used to set up the working directory
+import re  # Define regular expression patterns
+import math # The math library is used to perform mathematical operations
+import json # Use the built-in JSON-related functions in Mathematica to save the data in JSON format, and then use JSON libraries in Python to process the JSON data
+import random # The random library is used to generate random numbers
+import pickle # The pickle library is used to save and read data in pkl format
+import numpy as np  # The NumPy library is used to process arrays
+import pandas as pd  # Using the pandas library to read CSV files
+import datetime # The datetime library is used to record the time of execution
+from scipy import  interpolate # The scipy library is used to perform interpolation
+from scipy.interpolate import griddata # The scipy library is used to perform interpolation
+from scipy.interpolate import interp1d # The scipy library is used to perform interpolation
+from scipy.interpolate import LinearNDInterpolator # The scipy library is used to perform interpolation
+from scipy.optimize import brentq
+from itertools import groupby
+import warnings 
+warnings.filterwarnings("ignore", category=np.RankWarning)
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+import time
+from scipy.interpolate import RBFInterpolator
+import functools
+
+###############################################STRUCTURE OF THE MODEL###############################################
+# 1. Basic information import (class: BasicParameters)
+###############################################STRUCTURE OF THE MODEL###############################################
+
+
+
+
+
+# -------------------------------------------------------------------------------------------------------------------------------------------  
+# ----------------------------------------------------------1. Basic information import--------------------------------------------------------
+# -------------------------------------------------------------------------------------------------------------------------------------------  
+
+class BasicParameters:
+    def __init__(self):
+        os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    
+    #Specimen dimentions
+    def specimen_dimentions(self):
+        self.width = 5 if self.type in ["Smooth", "R008", "R100"] else 1.5
+        self.thickness = {
+            "T16":1.35,"T24": 1.9, "T25": 2.0, "T50": 4.5}.get(self.T)
+
+    #Active zone defination
+    def active_zone(self):
+        if self.type == "Smooth":
+            self.y_lim = 1.5
+            self.z_lim = 2.5
+            self.grain_size_lim = 0.2
+            self.active_element_size = [0.1, 0.1]
+            self.stress_lim = 0.1
+
+        elif self.type == "R100":
+            self.y_lim = 0.5
+            self.z_lim = 2.5
+            if self.steel == "B" or self.steel == "G":
+                self.grain_size_lim = 0.2
+                self.active_element_size = [0.125, 0.125]
+                self.stress_lim = 0.5
+            elif self.steel == "N50R":
+                self.grain_size_lim = 0.2
+                self.active_element_size = [0.125, 0.125]
+                self.stress_lim = 0.4
+
+
+        elif self.type == "R008":
+            self.y_lim = 0.04
+            self.z_lim = 2.5
+            self.grain_size_lim = 0.2
+            self.active_element_size = [0.02, 0.05]
+            self.stress_lim = 0.2
+        elif self.type == "CS":
+            self.y_lim = 0.025
+            self.z_lim = 0.75
+            self.grain_size_lim = 0.3
+            self.active_element_size = [0.025, 0.15]
+            if self.steel in ["G"]:
+                self.stress_lim = 1.0
+            elif self.steel == "N50R":
+                self.stress_lim = 1.0
+
+        self.active_element_area = self.active_element_size[0] * self.active_element_size[1]
+        
+        # Creation of area element coordinates
+        self.AeNumY = int(self.y_lim / self.active_element_size[0])
+        self.AeNumZ = int(self.z_lim / self.active_element_size[1])
+        self.AeNum = self.AeNumY * self.AeNumZ  # Number of area elements in the target area
+        self.AeYZ = np.array([[self.active_element_size[0] * (i - 0.5 if i > 0 else 0), 
+                               self.active_element_size[1] * (j - 0.5 if j > 0 else 0)]
+                      for i in range(1,self.AeNumY + 1)  # Start from 0 to include points with y-coordinate as 0
+                      for j in range(1,self.AeNumZ + 1)])
+
+
+    #Evaluation points
+    def calculate_evaluation_points(self):
+        if self.gb_effect == 0:
+            self.eval_num_stage1= 4
+            self.eval_num_stage2 = 8
+            self.eval_lenghth_lim = 0.95 * self.thickness
+
+            def eval_points_full(r1):
+                return [r1 * (1 - ((self.eval_num_stage1 - i) / self.eval_num_stage1) ** 3) for i in range(self.eval_num_stage1)] + \
+                       [r1 + (self.eval_lenghth_lim - r1) * ((i / self.eval_num_stage2) ** 1.2) for i in range(self.eval_num_stage2)]
+            self.eval_points_full = eval_points_full
+        else:
+            self.eval_num_stage1 = 4
+            self.eval_lenghth_lim = 0.98 * self.thickness
+            def eval_points_stage1(r1):
+                return [r1 * (1 - ((self.eval_num_stage1 - i + 1) / self.eval_num_stage1) ** 3) for i in range(1, self.eval_num_stage1 + 1)]
+            self.eval_points_stage1 = eval_points_stage1
+
+
+            if self.steel in ["G","B"]:
+                if self.T == "T16":
+                    self.eval_points_stage2 = {
+                        "Smooth": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.35]}.get(self.type)
+                if self.T == "T24":
+                    self.eval_points_stage2 = {
+                        "R008": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, \
+                            1.6, 1.7, 1.8], 
+                        "R100": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, \
+                            1.6, 1.7, 1.8],}.get(self.type)
+                elif self.T == "T50":
+                    self.eval_points_stage2 = {
+                        "R008": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, \
+                            1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0, 3.1, 3.2, 3.3, 3.4, 3.5, \
+                            3.6, 3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4],
+                        "CS": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, \
+                            1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0, 3.1, 3.2, 3.3, 3.4, 3.5, \
+                            3.6, 3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4],
+                        "CSS": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, \
+                            1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0, 3.1, 3.2, 3.3, 3.4, 3.5, \
+                            3.6, 3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4]}.get(self.type)
+
+
+            elif self.steel == "N50R":
+                if self.T == "T16":
+                    self.eval_points_stage2 = {
+                        "Smooth": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.35]}.get(self.type)
+                if self.T == "T24":
+                    self.eval_points_stage2 = {
+                        "R008": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, \
+                            1.6, 1.7, 1.8],
+                        "R100": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, \
+                            1.6, 1.7, 1.8],
+                        "CS": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, \
+                            1.6, 1.7, 1.8]}.get(self.type)
+                elif self.T == "T25":
+                    self.eval_points_stage2 = {
+                        "R008": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, \
+                            1.6, 1.7, 1.8, 1.9],
+                        "CS": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, \
+                            1.6, 1.7, 1.8, 1.9]}.get(self.type)
+                elif self.T == "T50":
+                    self.eval_points_stage2 = {
+                        "CS": [0.05, 0.10, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, \
+                            1.6, 1.7, 1.8, 1.9, 2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 3.0, 3.1, 3.2, 3.3, 3.4, 3.5, \
+                            3.6, 3.7, 3.8, 3.9, 4.0, 4.1, 4.2, 4.3, 4.4]
+                            }.get(self.type)
+
+
+
+        self.eval_num_stage2 = len(self.eval_points_stage2) + 2 
+        self.eval_num_total = self.eval_num_stage1 + self.eval_num_stage2
+
+
+

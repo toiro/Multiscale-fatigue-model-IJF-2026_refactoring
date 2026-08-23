@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> None:
         prog="multiscale-fatigue-model-ijf-2026",
         description=(
             "Run the refactored reference implementation. "
-            "Comparison commands live under scripts/."
+            "Comparison commands live under scripts/verification/."
         ),
     )
     subparsers = parser.add_subparsers(dest="command")

@@ -25,7 +25,7 @@ class OutputContext:
 def build_output_context(context: SimulationContext) -> OutputContext:
     return OutputContext(
         output_dir=context.config.output_dir,
-        model_name=context.params.name,
+        model_name=context.model_files.output_filename_body,
         n_paris=context.params.n_paris,
         delta_delta_th=context.params.Δδ_th,
         ferrite_friction_strength=(

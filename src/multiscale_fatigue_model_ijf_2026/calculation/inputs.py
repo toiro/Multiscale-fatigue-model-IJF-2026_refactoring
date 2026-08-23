@@ -13,6 +13,7 @@ LocationYZ: TypeAlias = list[float] | list[str]
 StressTensor: TypeAlias = np.ndarray
 FloatInterpolator = Callable[..., object]
 EvaluationPointFunction = Callable[[float], list[float]]
+Stage2WeightFunction = Callable[[float, float], object]
 WeightFunctionConstants: TypeAlias = list[list[Number]]
 GeneratedGrainData: TypeAlias = list[list[Number]]
 
@@ -43,7 +44,6 @@ class SpecimenGeometry:
     active zone, applied nominal stress list, and symmetry settings.
     """
 
-    specimen_type: str | None
     remote_type: int | None
     width: float | None
     thickness: float | None
@@ -138,9 +138,7 @@ class WeightFunctionData:
     qq_function: FloatInterpolator
     secant_ellipse: FloatInterpolator
     weight_function_constants: WeightFunctionConstants
-    weight_function_rbf: object
-    weight_function_rbf_low: object
-    weight_function_rbf_high: object
+    stage2_weight_function: Stage2WeightFunction
     gauss_weights_10: np.ndarray
     gauss_points_10: np.ndarray
     remote_stress_function: FloatInterpolator

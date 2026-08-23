@@ -27,13 +27,23 @@ from .parameters import (
     generate_euler_angles,
     resolve_slip_plane,
 )
-from .paths import field_values_filename, resolve_cache_path
+from .paths import field_values_filename, resolve_cache_path, resolve_condition_dir
+
+
+@dataclass
+class ResolvedModelFiles:
+    input_dir: Path
+    cache_dir: Path
+    model_name: str
+    output_filename_body: str
+    field_values_cache_filename: str
 
 
 @dataclass
 class SimulationContext:
     config: SimulationConfig
     params: PaperModelParameters
+    model_files: ResolvedModelFiles
     material: object
     field_values_by_load: dict[int, object]
     parameter_snapshot: dict[str, object] = field(default_factory=dict)
@@ -53,22 +63,23 @@ def build_context(config: SimulationConfig) -> SimulationContext:
         random.seed(config.random_seed)
         np.random.seed(config.random_seed)
 
-    base_dir = Path(config.base_dir).resolve()
-    cache_dir = Path(config.cache_dir).resolve() if config.cache_dir else base_dir
     params = _build_paper_model_parameters(config)
+    model_files = _resolve_model_files(config, params)
 
     pkl_file_name = resolve_cache_path(
-        cache_dir,
-        field_values_filename(steel=params.steel, specimen_type=params.type),
+        model_files.cache_dir,
+        model_files.field_values_cache_filename,
     )
     if not pkl_file_name.exists():
         AbaqusDatabaseCreator(
-            _build_abaqus_input(params), base_dir=base_dir, cache_dir=cache_dir
+            _build_abaqus_input(params, model_files),
+            base_dir=model_files.input_dir,
+            cache_dir=model_files.cache_dir,
         )
 
     material_input = _build_material_input(params)
     material = MaterialDataImporter(
-        material_input, base_dir=base_dir, cache_dir=cache_dir
+        material_input, base_dir=model_files.input_dir, cache_dir=model_files.cache_dir
     )
     field_values_input = _build_field_values_input(params)
     field_values_by_load = {
@@ -79,6 +90,7 @@ def build_context(config: SimulationConfig) -> SimulationContext:
     return SimulationContext(
         config=config,
         params=params,
+        model_files=model_files,
         material=material,
         field_values_by_load=field_values_by_load,
         parameter_snapshot=build_parameter_snapshot(params),
@@ -114,11 +126,38 @@ def _build_paper_model_parameters(config: SimulationConfig) -> PaperModelParamet
     return params
 
 
-def _build_abaqus_input(params: PaperModelParameters) -> AbaqusImportInput:
+def _resolve_model_files(
+    config: SimulationConfig,
+    params: PaperModelParameters,
+) -> ResolvedModelFiles:
+    condition = params.condition
+    input_dir = resolve_condition_dir(config.base_dir, condition.model_name)
+    if config.cache_dir:
+        cache_dir = Path(config.cache_dir).resolve() / condition.model_name
+    else:
+        cache_dir = resolve_condition_dir(Path(config.base_dir), condition.model_name)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return ResolvedModelFiles(
+        input_dir=input_dir,
+        cache_dir=cache_dir,
+        model_name=condition.model_name,
+        output_filename_body=condition.model_name,
+        field_values_cache_filename=field_values_filename(
+            steel=condition.steel,
+            specimen_type=condition.specimen_type,
+        ),
+    )
+
+
+def _build_abaqus_input(
+    params: PaperModelParameters,
+    model_files: ResolvedModelFiles,
+) -> AbaqusImportInput:
     return AbaqusImportInput(
-        model_name=params.name,
+        model_name=model_files.model_name,
         steel=params.steel,
-        specimen_type=params.type,
+        specimen_type=params.specimen_type,
+        nominal_stress_extraction_mode=params.nominal_stress_extraction_mode,
         width=params.width,
         thickness=params.thickness,
     )
@@ -127,7 +166,8 @@ def _build_abaqus_input(params: PaperModelParameters) -> AbaqusImportInput:
 def _build_material_input(params: PaperModelParameters) -> MaterialImportInput:
     return MaterialImportInput(
         steel=params.steel,
-        specimen_type=params.type,
+        specimen_type=params.specimen_type,
+        weight_function_table_family=params.weight_function_table_family,
         thickness=params.thickness,
         active_element_area=params.active_element_area,
         first_grain=params.FirstGrain,
@@ -164,7 +204,6 @@ def build_calculation_input_data_from_prepared_objects(
 
 def _build_specimen_geometry(params: PaperModelParameters) -> SpecimenGeometry:
     return SpecimenGeometry(
-        specimen_type=params.type,
         remote_type=params.remote_type,
         width=params.width,
         thickness=params.thickness,
@@ -251,9 +290,7 @@ def _build_weight_function_data(material: object) -> WeightFunctionData:
         qq_function=weight.qq_function,
         secant_ellipse=weight.secant_ellipse,
         weight_function_constants=weight.weight_function_constants,
-        weight_function_rbf=weight.weight_function_rbf,
-        weight_function_rbf_low=weight.weight_function_rbf_low,
-        weight_function_rbf_high=weight.weight_function_rbf_high,
+        stage2_weight_function=weight.stage2_weight_function,
         gauss_weights_10=weight.gauss_weights_10,
         gauss_points_10=weight.gauss_points_10,
         remote_stress_function=weight.remote_stress_function,

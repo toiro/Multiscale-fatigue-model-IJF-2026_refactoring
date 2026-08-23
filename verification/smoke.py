@@ -67,7 +67,6 @@ def _build_mock_input_data() -> CalculationInputData:
     return CalculationInputData(
         iteration_numbers=np.array([0]),
         specimen=SpecimenGeometry(
-            specimen_type=None,
             remote_type=None,
             width=None,
             thickness=None,
@@ -129,9 +128,7 @@ def _build_mock_input_data() -> CalculationInputData:
             qq_function=None,
             secant_ellipse=None,
             weight_function_constants=None,
-            weight_function_rbf=None,
-            weight_function_rbf_low=None,
-            weight_function_rbf_high=None,
+            stage2_weight_function=lambda at, ac: 1.0,
             gauss_weights_10=None,
             gauss_points_10=None,
             remote_stress_function=None,

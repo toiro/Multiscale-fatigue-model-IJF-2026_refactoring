@@ -1,0 +1,15 @@
+{
+  "steel": "G",
+  "specimen_type": "Smooth",
+  "thickness_sign": "T16",
+  "crystal": "BCC",
+  "r_ratio": -1,
+  "c_paris": 18,
+  "n_paris": 1.8,
+  "delta_delta_th": 0.000063,
+  "random_seed": 42,
+  "sigma_nom": [150],
+  "iteration_count": 1,
+  "n_symm": 1,
+  "max_active_elements": 1
+}

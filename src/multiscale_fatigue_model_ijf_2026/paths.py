@@ -3,6 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 
 
+def resolve_condition_dir(root_dir: Path, model_name: str) -> Path:
+    """Use a condition subdirectory when resources are grouped by model name."""
+
+    root_dir = Path(root_dir).resolve()
+    condition_dir = root_dir / model_name
+    if condition_dir.is_dir():
+        return condition_dir
+    return root_dir
+
+
 def resolve_input_path(base_dir: Path, filename: str) -> Path:
     return Path(base_dir).resolve() / filename
 

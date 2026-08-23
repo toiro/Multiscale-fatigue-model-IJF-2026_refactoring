@@ -11,6 +11,7 @@ from scipy.interpolate import (
     griddata,
 )  # The scipy library is used to perform interpolation  # The scipy library is used to perform interpolation
 
+from .parameters import NominalStressExtractionMode
 from .paths import (
     abaqus_dat_filename,
     abaqus_inp_filename,
@@ -32,6 +33,7 @@ class AbaqusImportInput:
     model_name: str
     steel: str
     specimen_type: str
+    nominal_stress_extraction_mode: NominalStressExtractionMode
     width: float
     thickness: float
 
@@ -226,15 +228,13 @@ class AbaqusDatabaseCreator:
         ][0] + 1
         if self.inp_data[eTrimStart - 1].split(",")[-1] == " generate\n":
 
-            eTrim0 = [
-                list(
-                    range(
-                        int(self.inp_data[eTrimStart].split(",")[0]),
-                        int(self.inp_data[eTrimStart].split(",")[1]) + 1,
-                        int(self.inp_data[eTrimStart].split(",")[2]),
-                    )
+            eTrim0 = list(
+                range(
+                    int(self.inp_data[eTrimStart].split(",")[0]),
+                    int(self.inp_data[eTrimStart].split(",")[1]) + 1,
+                    int(self.inp_data[eTrimStart].split(",")[2]),
                 )
-            ]
+            )
 
             eTrim = [x - 1 for x in eTrim0]
         else:
@@ -414,22 +414,7 @@ class AbaqusDatabaseCreator:
         )
         self.step = len(xyzDE)
 
-        if self.input.specimen_type in ["CS"]:
-            Load_Lines0 = [
-                idx + 2 for idx, line in enumerate(self.inp_data) if "*Dsload" in line
-            ]
-            Load_lines = [
-                sublist
-                for index, sublist in enumerate(self.inp_data)
-                if index + 1 in Load_Lines0
-            ]
-            sigma_app_edge = [-1 * float(line.split(",")[2]) for line in Load_lines]
-            sigma_nom_list0 = [
-                (self.input.width * (self.input.thickness + 0.5))
-                / (self.input.width * self.input.thickness)
-                * σ
-                for σ in sigma_app_edge
-            ]
+        sigma_nom_list0 = self._extract_nominal_stresses()
 
         self.sigma_nom_list = [0.0] + sigma_nom_list0[0 : self.step - 1]
 
@@ -527,3 +512,63 @@ class AbaqusDatabaseCreator:
         return print(
             "Complete Definition of FieldValues Function :", datetime.datetime.now()
         )
+
+    def _extract_nominal_stresses(self):
+        mode = self.input.nominal_stress_extraction_mode
+        if mode == NominalStressExtractionMode.SMOOTH_DSLOAD:
+            return self._extract_smooth_dsload_nominal_stresses()
+        if mode == NominalStressExtractionMode.THREE_POINT_BENDING_RF1:
+            return self._extract_three_point_bending_rf1_nominal_stresses()
+        if mode == NominalStressExtractionMode.COMPACT_SPECIMEN_DSLOAD:
+            return self._extract_compact_specimen_dsload_nominal_stresses()
+        raise NotImplementedError(
+            "Abaqus nominal stress extraction is not implemented for "
+            f"mode={mode!r}. {self.input.model_name} uses "
+            f"specimen_type={self.input.specimen_type}; add an explicit "
+            "nominal-stress mapping before generating its FieldValues cache."
+        )
+
+    def _extract_smooth_dsload_nominal_stresses(self):
+        load_lines = [
+            index + 1 for index, row in enumerate(self.inp_data) if "*Dsload" in row
+        ]
+        sigma_app_edge = [
+            float(self.inp_data[line].split(",")[2]) for line in load_lines
+        ]
+        return [
+            (15 * 1.6) / (self.input.width * self.input.thickness) * sigma
+            for sigma in sigma_app_edge
+        ]
+
+    def _extract_three_point_bending_rf1_nominal_stresses(self):
+        rf1_lines0 = [
+            idx + 4 for idx, line in enumerate(self.dat_data) if "RF1" in line
+        ]
+        rf1_lines = [
+            sublist
+            for index, sublist in enumerate(self.dat_data)
+            if index + 1 in rf1_lines0
+        ]
+        load = [4 * float(line.split()[1]) for line in rf1_lines]
+        sigma_nom_list = [
+            ((50 * load0) / 4) / ((self.input.width * self.input.thickness**2) / 6)
+            for load0 in load
+        ]
+        return sigma_nom_list
+
+    def _extract_compact_specimen_dsload_nominal_stresses(self):
+        load_lines0 = [
+            idx + 2 for idx, line in enumerate(self.inp_data) if "*Dsload" in line
+        ]
+        load_lines = [
+            sublist
+            for index, sublist in enumerate(self.inp_data)
+            if index + 1 in load_lines0
+        ]
+        sigma_app_edge = [-1 * float(line.split(",")[2]) for line in load_lines]
+        return [
+            (self.input.width * (self.input.thickness + 0.5))
+            / (self.input.width * self.input.thickness)
+            * sigma
+            for sigma in sigma_app_edge
+        ]

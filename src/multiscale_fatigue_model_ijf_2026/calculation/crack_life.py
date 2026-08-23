@@ -326,22 +326,13 @@ def _generate_grain_boundaries(
     g_data_arr = np.asarray(microstructure.generated_grain_data)
     Ng = grains_per_layer
 
-    if specimen.specimen_type in ["CS", "CSS"]:
-        # Random sampling: select generated grains along the crack path.
-        rand_indices = np.random.randint(0, len(g_data_arr), size=grains_per_layer)
-        selected_gdata = g_data_arr[rand_indices]
-        # selected_gdata = g_data_arr[100:100+Ng]
-        g_List = np.vstack(
-            ([material_strength.ferrite_friction_strength, r1, rt1], selected_gdata)
-        )
-
-    else:
-        # Random sampling: select generated grains along the crack path.
-        rand_indices = np.random.randint(0, len(g_data_arr), size=Ng)
-        selected_gdata = g_data_arr[rand_indices]
-        g_List = np.vstack(
-            ([material_strength.ferrite_friction_strength, r1, rt1], selected_gdata)
-        )
+    # Random sampling: select generated grains along the crack path.
+    rand_indices = np.random.randint(0, len(g_data_arr), size=Ng)
+    selected_gdata = g_data_arr[rand_indices]
+    # selected_gdata = g_data_arr[100:100+Ng]
+    g_List = np.vstack(
+        ([material_strength.ferrite_friction_strength, r1, rt1], selected_gdata)
+    )
 
     # Keep the legacy local names in this generator because the layer-building
     # equations below still follow the original notation closely. The public
@@ -833,21 +824,8 @@ def _interpolate_stage2_weight_function(
     weight_function: Any,
 ) -> Any:
     # Define the function to calculate KWeight
-    # Extract at, ac, and values from the list of lists
-    if specimen.specimen_type in ["CS", "CSS"]:
-        if at <= 0.6:
-            interpolated_value = weight_function.weight_function_rbf_low(
-                [[at, ac]]
-            )[0]
-        elif at > 0.6:
-            interpolated_value = weight_function.weight_function_rbf_high(
-                [[at, ac]]
-            )[0]
-        return 1 / np.sqrt(specimen.thickness * at) * interpolated_value
-    else:
-        # Interpolate the value
-        interpolated_value = weight_function.weight_function_rbf([[at, ac]])[0]
-        return 1 / np.sqrt(specimen.thickness * at) * interpolated_value
+    interpolated_value = weight_function.stage2_weight_function(at, ac)
+    return 1 / np.sqrt(specimen.thickness * at) * interpolated_value
 
 
 def _interpolate_stage1_weight_function(
