@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:PYTHONUTF8 = "1"
 
 $python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $python)) {

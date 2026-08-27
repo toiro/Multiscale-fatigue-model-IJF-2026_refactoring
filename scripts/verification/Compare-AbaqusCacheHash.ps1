@@ -8,6 +8,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:PYTHONUTF8 = "1"
 
 if ([string]::IsNullOrWhiteSpace($ReferenceCachePath)) {
     $ReferenceCachePath = Join-Path $RepoRoot "multiscale-fatigue-model\$CacheFileName"

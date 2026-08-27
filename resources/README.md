@@ -19,7 +19,7 @@ resources/
   N50R_R100_T24/
   N50R_CS_T50/
     N50R_CS_T50.inp
-    N50R_CS_T50.dat
+    N50R_CS_T50.dat or N50R_CS_T50.dat.zip
     N50R_*.csv
     CombinedData_Ellipse_WF_CF.json
 ```
@@ -71,8 +71,14 @@ Generated cache files such as `*_FieldValues.pkl` and `*_gData.pkl` should stay
 outside committed input resources unless a verification task explicitly needs a
 cached fixture.
 
+Input files larger than GitHub's 100 MB file size limit are stored as `.zip`
+files in this repository.
 If only `*.dat.zip` is stored, expand it before running without a precomputed
-field cache.
+field cache. For example:
+
+```powershell
+Expand-Archive resources\N50R_CS_T50\N50R_CS_T50.dat.zip -DestinationPath resources\N50R_CS_T50
+```
 
 The runner reads only from the resolved condition directory. Put every file
 needed for a condition, including `CombinedData_Ellipse_WF_CF.json`, inside that

@@ -22,10 +22,24 @@ Execution hierarchy:
 3. `calculation/element_life.py`: sample candidate cracks inside one active area element and keep the shortest life.
 4. `calculation/crack_life.py`: evaluate crack-growth points through Stage I/II, CTSD, K value, closure, and life integration.
 
-Run the refactored implementation against the legacy input directory with:
+Create and activate a virtual environment if needed, then install the package in
+editable mode before using `python -m ...` commands:
 
-```bash
-python -m multiscale_fatigue_model_ijf_2026.cli run --config-file verification/configs/original_defaults.json --base-dir multiscale-fatigue-model --output-dir outputs/run --delete-existing-output
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+```
+
+Run the refactored implementation against the resource input directory with:
+
+```powershell
+python -X utf8 -m multiscale_fatigue_model_ijf_2026.cli run `
+  --config-file resources\configs\N50R_CS_T50.json `
+  --base-dir resources `
+  --cache-dir outputs\condition_cache `
+  --output-dir outputs\conditions\N50R_CS_T50 `
+  --delete-existing-output
 ```
 
 Default simulation parameters follow `multiscale-fatigue-model/Multiscale_fatigue_model.org.py`: `sigma_nom` is `[150, 160, 170, 180, 190]`, `iteration_count` is `4`, and `n_symm` is `4`. These values are written explicitly in `verification/configs/original_defaults.json`; no random seed is set for the default run.
@@ -67,8 +81,15 @@ multi-condition entry point. The current `N50R_CS_T50` data lives under
 - `CombinedData_Ellipse_WF_CF.json`: weight-function constants.
 
 Generated cache files such as `*.pkl` and output CSV files are kept outside `resources/`.
+Input files larger than GitHub's 100 MB file size limit are stored as `.zip`
+files in this repository.
 If a run must rebuild the Abaqus field cache from resources, provide the expanded
-`.dat` file in the condition directory.
+`.dat` file in the condition directory. If only the zipped `.dat` file is present,
+extract it before a fresh run:
+
+```powershell
+Expand-Archive resources\N50R_CS_T50\N50R_CS_T50.dat.zip -DestinationPath resources\N50R_CS_T50
+```
 
 Cache files keep the legacy filename rule: FieldValues and generated
 microstructure caches use `steel + specimen_type`, not `thickness_sign`. When
@@ -96,8 +117,8 @@ scripts\Invoke-ConditionResourcesRun.ps1 -ConfigFile verification\configs\condit
 
 For a light verification run, use the smoke preset:
 
-```bash
-python -m multiscale_fatigue_model_ijf_2026.cli run --preset smoke
+```powershell
+python -X utf8 -m multiscale_fatigue_model_ijf_2026.cli run --preset smoke
 ```
 
 Comparison commands live under `scripts/verification/`; the normal CLI does not run the old implementation. To compare the refactored implementation against `Multiscale_fatigue_model.py` under a heavier seed-fixed condition, use `scripts\verification\Invoke-HeavyComparison.ps1`.
@@ -114,5 +135,7 @@ Comparison commands live under `scripts/verification/`; the normal CLI does not 
 - Required libraries: `numpy`, `pandas`, `scipy`
 
 Install the dependencies using:
-```bash
-pip install numpy pandas scipy
+
+```powershell
+python -m pip install -e .
+```

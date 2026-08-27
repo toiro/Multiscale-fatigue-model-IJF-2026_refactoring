@@ -3,6 +3,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:PYTHONUTF8 = "1"
 
 & (Join-Path $PSScriptRoot "Invoke-ParameterConditionVerification.ps1") `
     -RepoRoot $RepoRoot
