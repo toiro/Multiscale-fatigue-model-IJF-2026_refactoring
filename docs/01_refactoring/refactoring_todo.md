@@ -31,6 +31,9 @@ Phase Last: 研究者向け単純化。
 - [x] 通常実行用 config は random seed 未指定とし、seed 固定 config は比較検証用として分離した。
 - [x] `resources/sample_simulation.json` を `.org.py` 準拠の通常設定に合わせた。
 - [x] `crack_life.py` の CTSD 評価内に残っていた旧名 `rnList[0]` を `boundary_depths[0]` へ修正した。
+- [x] `input_preparation.py` を作成し、計算入力組み立て helper を `context.py` から移した。
+- [x] `SimulationContext` から `MaterialDataImporter` と `field_values_by_load` を外し、`CalculationInputData` と出力に必要な最小値だけを保持する状態にした。
+- [x] `FieldDataForCalculation` を実態に合わせて `StressFieldData` へ改名し、未使用の Abaqus cache 生データを計算入力から外した。
 
 ## Deferred
 

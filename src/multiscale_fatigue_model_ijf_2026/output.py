@@ -28,9 +28,7 @@ def build_output_context(context: SimulationContext) -> OutputContext:
         model_name=context.model_files.output_filename_body,
         n_paris=context.params.n_paris,
         delta_delta_th=context.params.Δδ_th,
-        ferrite_friction_strength=(
-            context.material.mechanical_properties.ferrite_friction_strength
-        ),
+        ferrite_friction_strength=context.output_ferrite_friction_strength,
         r_ratio=context.params.R_ratio,
     )
 

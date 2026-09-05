@@ -38,7 +38,7 @@ def main() -> None:
 
     context = build_context(config)
     input_data = build_calculation_input_data(context)
-    field_values = context.field_values_by_load[args.load_index]
+    field_values = input_data.stress_fields.by_load[args.load_index]
     ranked_elements = _rank_area_elements(input_data.specimen, field_values)
 
     rank_index = args.area_element_rank - 1

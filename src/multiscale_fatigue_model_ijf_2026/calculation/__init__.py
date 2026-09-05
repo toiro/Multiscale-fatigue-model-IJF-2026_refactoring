@@ -4,10 +4,10 @@ from .inputs import (
     CalculationInputData,
     CrackGrowthConstants,
     EvaluationPointDefinition,
-    FieldDataForCalculation,
     MaterialStrengthProperties,
     MicrostructureModel,
     SpecimenGeometry,
+    StressFieldData,
     WeightFunctionData,
 )
 from .load_case import IterationResult, LoadCaseResult, calculate_load_case
@@ -16,10 +16,10 @@ __all__ = [
     "CalculationInputData",
     "CrackGrowthConstants",
     "EvaluationPointDefinition",
-    "FieldDataForCalculation",
     "MaterialStrengthProperties",
     "MicrostructureModel",
     "SpecimenGeometry",
+    "StressFieldData",
     "WeightFunctionData",
     "CrackLifeResult",
     "ElementLifeResult",

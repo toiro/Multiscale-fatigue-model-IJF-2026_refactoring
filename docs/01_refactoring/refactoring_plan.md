@@ -101,9 +101,9 @@ legacy スクリプト由来の属性名や fallback は、この層より内側
 
 現在の計算核入口は `CalculationInputData` である。
 
-`CalculationInputData` は、`context.py` の入力準備境界で `SimulationContext` から作る。これは汎用 API のためではなく、計算核に入る物理量と条件を明示するための構造である。
+`CalculationInputData` は、外側の入力準備境界で `PaperModelParameters`、材料 import 結果、field values から作る。これは汎用 API のためではなく、計算核に入る物理量と条件を明示するための構造である。
 
-現在の `calculation/inputs.py` は dataclass 定義だけを持ち、legacy 属性名の fallback は `context.py` の入力準備境界に置く。計算核と `CalculationInputData` は、整理済みの入力データだけを前提に読める状態を維持する。
+現在の `calculation/inputs.py` は、計算核が必要とする入力 dataclass の正本として扱う。外部ファイル、config、cache、`MaterialDataImporter` の事情は calculation の外側で `CalculationInputData` へ写像し、計算核と `CalculationInputData` は整理済みの入力データだけを前提に読める状態を維持する。
 
 - `SpecimenGeometry`
 - `CrackGrowthConstants`
@@ -111,7 +111,7 @@ legacy スクリプト由来の属性名や fallback は、この層より内側
 - `MicrostructureModel`
 - `MaterialStrengthProperties`
 - `WeightFunctionData`
-- `FieldDataForCalculation`
+- `StressFieldData`
 
 ### 出力層
 
@@ -133,7 +133,7 @@ legacy 互換と検証用 adapter は、最終的には次の最外周だけに�
 
 - original script と比較する検証スクリプト
 - `verification/smoke.py`
-- `context.py` の `SimulationContext -> CalculationInputData` 変換境界
+- 外側の入力準備層における prepared objects -> `CalculationInputData` 変換境界
 
 context adapter route は旧実装そのものではなく、`src` 内の別入口を通すだけだったため、Phase Last の単純化で削除済み。
 
@@ -156,7 +156,7 @@ context adapter route は旧実装そのものではなく、`src` 内の別入�
 優先する対応:
 
 - `CalculationInputData` は、計算核へ入る物理量を明示するために使い、汎用 API 化のためには増やさない。
-- legacy fallback は `context.py` の入力準備境界に閉じ込め、計算核へ再流入させない。
+- legacy fallback は外側の入力準備境界に閉じ込め、計算核へ再流入させない。
 - 旧実装互換 shim は `verification/` 側に置き、一般研究者の通常読解ルートには含めない。
 - `BasicParameters` に残る研究条件は、`src/` 内の正本にしない。事前処理用入力、派生値生成、計算核入力に分け、旧名互換は再導入しない。
 - `MaterialDataImporter` の公開面は、`grain_distributions`, `mechanical_properties`, `abaqus_field_cache`, `weight_function_resources`, `microstructure_data` の typed view に絞る。旧名属性は入力準備内部の作業状態として扱い、新たな外部依存を増やさない。
@@ -173,14 +173,14 @@ context adapter route は旧実装そのものではなく、`src` 内の別入�
 ### Phase 1: `CalculationContext` の導入 完了
 
 - `calculation/context.py` と `CalculationContext` は過渡構造として導入後、削除済み。
-- `context.py` は `SimulationContext` または prepared objects から `CalculationInputData` を作る。
+- `context.py` は実行準備の流れを担い、prepared objects から `CalculationInputData` を作る細かな helper は外側の入力準備層に分ける。
 - `calculate_load_case`, `calculate_element_life`, `calculate_crack_life` は `CalculationInputData` を直接受ける。
 - 計算式、乱数呼び出し順序、戻り値、CSV 出力形式は変更しない。
 
 ### Phase 2: 計算核入力データの分解
 
 - `calculation/inputs.py` に用途別 dataclass を追加済み。
-- `load_case.py` は `SpecimenGeometry`, `EvaluationPointDefinition`, `FieldDataForCalculation` の参照を使い始めている。
+- `load_case.py` は `SpecimenGeometry`, `EvaluationPointDefinition`, `StressFieldData` の参照を使い始めている。
 - `element_life.py` の raw kernel は `CalculationInputData` 経由の参照へ移行済み。
 - `crack_life.py` は Paris 則定数、応力比、Stage I 境界の一部を `CrackGrowthConstants` / `EvaluationPointDefinition` 経由へ移行済み。
 - `crack_life.py` の試験片形状参照は `SpecimenGeometry` 経由へ移行済み。
@@ -241,7 +241,7 @@ context adapter route は旧実装そのものではなく、`src` 内の別入�
 - `BasicParameters` 旧名は `src/` から撤去済みで、旧名互換 shim も削除済み。
 - 試験片寸法、active zone、評価点生成、結晶方位生成、すべり面 resolver は `parameters.py` の独立関数へ切り出し済み。
 - `PaperModelParameters` は長い互換メソッドを持たない薄い属性束へ畳み直し済み。
-- `context.py` の Abaqus / material / field values / 計算核入力の組み立ては小さな helper に分割済み。
+- `context.py` の Abaqus / material / field values の準備は小さな helper に分割済み。計算核入力の組み立て helper は外側の入力準備層へ分ける。
 - `AbaqusDatabaseCreator` の `FieldValues.pkl` 新規生成枝は検証済みで、生成 cache を使った candidate 比較は CSV 完全一致。
 - `scripts/verification/Compare-AbaqusCacheHash.ps1` を追加し、Abaqus cache の byte-level hash 差分を検出できるようにした。
 - legacy cache と再生成 cache は CSV 結果は一致するが、`FieldValues.pkl` の hash は一致していない。
@@ -272,7 +272,7 @@ context adapter route は旧実装そのものではなく、`src` 内の別入�
 - `_crack_life_raw()` の主ループは論文 Submodel 3 の主導線として残し、これ以上 helper を細かく増やしすぎない。
 - `S_cyc0` は近傍点を巻き込んで補正されるため、単純な点更新履歴として扱わない構造を維持する。
 - Python scalar / NumPy scalar / ndarray / list / 補間器返り値の混在をそろえる作業は、必要性はあるが結果同一性リスクが高いため保留課題として管理する。
-- `context.py`, `parameters.py` は現状を維持し、`MaterialDataImporter` は公開面を typed view 5つへ絞る整理だけを小分けに進める。
+- `parameters.py` は現状を維持する。`context.py` は実行準備の流れに絞り、計算入力の細かな組み立て helper は外側の入力準備層へ分ける。
 - `rg "BasicParameters|BasicParams" src` が該当なしの状態は維持する。
 - 開発中の反復確認には、既存 baseline CSV を再利用する `scripts/verification/Invoke-CandidateComparison.ps1` を使う。
 

@@ -55,8 +55,7 @@ def calculate_load_case(
     specimen = input_data.specimen
     evaluation_points = input_data.evaluation_points
     iteration_numbers = input_data.iteration_numbers
-    field_values_by_load = input_data.field_data.field_values_by_load
-    field_values = field_values_by_load[load_index]
+    field_values = input_data.stress_fields.by_load[load_index]
 
     ranked_elements = _rank_area_elements(specimen, field_values)
     imax = min(round(specimen.ae_num * specimen.stress_lim), len(ranked_elements))

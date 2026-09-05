@@ -9,10 +9,10 @@ from multiscale_fatigue_model_ijf_2026.calculation.inputs import (
     CalculationInputData,
     CrackGrowthConstants,
     EvaluationPointDefinition,
-    FieldDataForCalculation,
     MaterialStrengthProperties,
     MicrostructureModel,
     SpecimenGeometry,
+    StressFieldData,
     WeightFunctionData,
 )
 from multiscale_fatigue_model_ijf_2026.config import SimulationConfig
@@ -140,19 +140,7 @@ def _build_mock_input_data() -> CalculationInputData:
             gauss_points_10=np.array([0.0]),
             remote_stress_function=lambda at, ac: 1.0,
         ),
-        field_data=FieldDataForCalculation(
-            field_values_by_load={0: _FakeFieldValues()},
-            elastic_modulus=1.0,
-            poisson_ratio=0.3,
-            crack_interaction_constant=1.0,
-            node_count=1,
-            step_count=1,
-            sigma_nom_list=np.array([150.0]),
-            sigma_to_step=lambda sigma: 0,
-            elastic_field_interpolators=None,
-            plastic_field_interpolators=None,
-            total_field_interpolators=None,
-        ),
+        stress_fields=StressFieldData(by_load={0: _FakeFieldValues()}),
     )
 
 

@@ -152,20 +152,10 @@ class WeightFunctionData:
 
 
 @dataclass(frozen=True)
-class FieldDataForCalculation:
-    """Abaqus field cache and precomputed field values used in stress lookup."""
+class StressFieldData:
+    """Stress field lookup functions used by each nominal-stress load case."""
 
-    field_values_by_load: dict[int, FieldValueProvider]
-    elastic_modulus: float
-    poisson_ratio: float
-    crack_interaction_constant: float
-    node_count: int
-    step_count: int
-    sigma_nom_list: np.ndarray
-    sigma_to_step: FloatInterpolator
-    elastic_field_interpolators: object
-    plastic_field_interpolators: object
-    total_field_interpolators: object
+    by_load: dict[int, FieldValueProvider]
 
 
 @dataclass(frozen=True)
@@ -184,4 +174,4 @@ class CalculationInputData:
     microstructure: MicrostructureModel
     material_strength: MaterialStrengthProperties
     weight_function: WeightFunctionData
-    field_data: FieldDataForCalculation
+    stress_fields: StressFieldData
