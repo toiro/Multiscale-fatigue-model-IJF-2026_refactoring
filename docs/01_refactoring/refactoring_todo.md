@@ -35,6 +35,7 @@ Phase Last: 研究者向け単純化。
 ## Deferred
 
 結果同一性、乱数順序、または検証負荷に影響しうるため、通常の読解性改善とは分けて扱う。
+高速化や結果変更リスクを伴う整理は [../optimization_issues.md](../optimization_issues.md) に集約する。
 
 - `crack_life.py` 内部の `Any` 削減。NumPy/SciPy の scalar・配列返り値が混在するため、数値型正規化の検証計画が先に必要。
 - 数値型の正規化。`float(...)`, `.item()`, `np.asarray(...)`, `list(...)` などは結果へ影響しうる。

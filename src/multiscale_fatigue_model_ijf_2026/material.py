@@ -140,6 +140,13 @@ class WeightFunctionResources:
 
     secant_ellipse: object
     weight_function_constants: object
+    stage1_weight_function_points: np.ndarray
+    stage1_weight_function_values: np.ndarray
+    stage1_weight_function_has_linear_points: bool
+    stage1_weight_function_at_min: float
+    stage1_weight_function_at_max: float
+    stage1_weight_function_ac_min: float
+    stage1_weight_function_ac_max: float
     stage2_weight_function: object
     gauss_weights_10: np.ndarray
     gauss_points_10: np.ndarray
@@ -276,6 +283,7 @@ class MaterialDataImporter:
 
     def _build_weight_function_resources(self):
         self._load_weight_function_constants()
+        self._build_stage1_weight_function_table()
         self._build_weight_function_interpolator()
         self._build_stage2_weight_function()
         self._load_remote_stress_constants()
@@ -364,6 +372,13 @@ class MaterialDataImporter:
         return WeightFunctionResources(
             secant_ellipse=self._secant_ellipse,
             weight_function_constants=self._weight_function_constants,
+            stage1_weight_function_points=self._stage1_weight_function_points,
+            stage1_weight_function_values=self._stage1_weight_function_values,
+            stage1_weight_function_has_linear_points=self._stage1_weight_function_has_linear_points,
+            stage1_weight_function_at_min=self._stage1_weight_function_at_min,
+            stage1_weight_function_at_max=self._stage1_weight_function_at_max,
+            stage1_weight_function_ac_min=self._stage1_weight_function_ac_min,
+            stage1_weight_function_ac_max=self._stage1_weight_function_ac_max,
             stage2_weight_function=self._stage2_weight_function,
             gauss_weights_10=GAUSS_WEIGHTS_10,
             gauss_points_10=GAUSS_POINTS_10,
@@ -498,6 +513,34 @@ class MaterialDataImporter:
             smooth=Ellipse_WF_CF["WFCsmooth"],
             three_point_bending=Ellipse_WF_CF["WFC3PBT"],
             compact_specimen=Ellipse_WF_CF["WFCCS"],
+        )
+
+    def _build_stage1_weight_function_table(self):
+        at_ac_values = [item[0] for item in self._weight_function_constants]
+        values = [item[1] for item in self._weight_function_constants]
+
+        at_values, ac_values = zip(*at_ac_values)
+        at_values = np.array(at_values)
+        ac_values = np.array(ac_values)
+        values = np.array(values)
+        mask_linear = at_values <= 0.1
+
+        self._stage1_weight_function_has_linear_points = bool(np.any(mask_linear))
+        self._stage1_weight_function_points = np.column_stack(
+            (at_values[mask_linear], ac_values[mask_linear])
+        )
+        self._stage1_weight_function_values = values[mask_linear]
+        self._stage1_weight_function_at_min = float(
+            self._stage1_weight_function_points[:, 0].min()
+        )
+        self._stage1_weight_function_at_max = float(
+            self._stage1_weight_function_points[:, 0].max()
+        )
+        self._stage1_weight_function_ac_min = float(
+            self._stage1_weight_function_points[:, 1].min()
+        )
+        self._stage1_weight_function_ac_max = float(
+            self._stage1_weight_function_points[:, 1].max()
         )
 
     def _build_weight_function_interpolator(self):

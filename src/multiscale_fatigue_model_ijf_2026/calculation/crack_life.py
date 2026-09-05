@@ -18,7 +18,17 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 from typing import Any
 
-from .inputs import CalculationInputData, NumericHistory
+from .inputs import (
+    CalculationInputData,
+    CrackGrowthConstants,
+    EvaluationPointDefinition,
+    FieldValueProvider,
+    MaterialStrengthProperties,
+    MicrostructureModel,
+    NumericHistory,
+    SpecimenGeometry,
+    WeightFunctionData,
+)
 
 
 @dataclass
@@ -36,6 +46,47 @@ class CrackLifeResult:
     surface_crack_length: NumericHistory
     grain_boundary_locations: NumericHistory
     opening_stress: NumericHistory
+
+
+class CrackLifeDiagnosticError(RuntimeError):
+    """Calculation stopped at a diagnosable invalid numerical state."""
+
+
+def _diagnostic_context(**items: object) -> str:
+    return ", ".join(f"{key}={value!r}" for key, value in items.items())
+
+
+def _flatten_numeric_values(value: object) -> np.ndarray:
+    try:
+        return np.asarray(value, dtype=float).reshape(-1)
+    except (TypeError, ValueError):
+        if isinstance(value, np.ndarray):
+            items = value.reshape(-1).tolist()
+        elif isinstance(value, (list, tuple)):
+            items = value
+        else:
+            raise
+
+        flattened = [_flatten_numeric_values(item) for item in items]
+        if not flattened:
+            return np.asarray([], dtype=float)
+        return np.concatenate(flattened)
+
+
+def _assert_finite(name: str, value: object, **context: object) -> None:
+    try:
+        values = _flatten_numeric_values(value)
+    except (TypeError, ValueError) as exc:
+        message = f"{name} could not be checked for finite values: {value!r}"
+        if context:
+            message += " (" + _diagnostic_context(**context) + ")"
+        raise CrackLifeDiagnosticError(message) from exc
+
+    if not np.all(np.isfinite(values)):
+        message = f"{name} contains non-finite values: {values!r}"
+        if context:
+            message += " (" + _diagnostic_context(**context) + ")"
+        raise CrackLifeDiagnosticError(message)
 
 
 @dataclass
@@ -119,9 +170,9 @@ def _build_evaluation_points(
     r1: float,
     rt1: float,
     rnList: Any,
-    evaluation_points: Any,
-    microstructure: Any,
-    crack_growth: Any,
+    evaluation_points: EvaluationPointDefinition,
+    microstructure: MicrostructureModel,
+    crack_growth: CrackGrowthConstants,
 ) -> tuple[list[Any], list[Any], int]:
     if crack_growth.gb_effect == 0:
         ai = evaluation_points.eval_points_full(r1)
@@ -170,7 +221,9 @@ def _build_evaluation_points(
     return ai, surfai, nai
 
 
-def _build_crack_aspect_function(r1: float, rt1: float, Anai: Any, specimen: Any) -> Any:
+def _build_crack_aspect_function(
+    r1: float, rt1: float, Anai: Any, specimen: SpecimenGeometry
+) -> Any:
     # Definition of a function that returns the crack aspect ratio from the crack depth at specific crack length
     # r1:crack depth，rt1：crack length，Anai：crack aspect ratio
     def F2(n: Any) -> Any:
@@ -202,7 +255,9 @@ def _build_crack_aspect_function(r1: float, rt1: float, Anai: Any, specimen: Any
     return ff00
 
 
-def _initial_crack_dimensions(r0: float, microstructure: Any) -> tuple[float, float]:
+def _initial_crack_dimensions(
+    r0: float, microstructure: MicrostructureModel
+) -> tuple[float, float]:
     # Random sampling: first-grain aspect ratio for the initial crack.
     aspg = microstructure.first_grain_aspect_cdfr(random.random())
     r1 = aspg * r0 * 0.5
@@ -213,8 +268,8 @@ def _initial_crack_dimensions(r0: float, microstructure: Any) -> tuple[float, fl
 def _crack_front_arc_length(
     asp0: Any,
     b: float,
-    specimen: Any,
-    weight_function: Any,
+    specimen: SpecimenGeometry,
+    weight_function: WeightFunctionData,
 ) -> Any:
     asp1 = float(asp0)
 
@@ -244,8 +299,8 @@ def _grain_span_depth(
 def _grain_span_front_length(
     rr_temp: Any,
     ff00: Any,
-    specimen: Any,
-    weight_function: Any,
+    specimen: SpecimenGeometry,
+    weight_function: WeightFunctionData,
     use_depth_limit: bool,
 ) -> Any:
     front_depth = specimen.thickness * 0.9 if use_depth_limit else rr_temp
@@ -260,8 +315,8 @@ def _find_shrink_offset_for_grain_span(
     dnList: Any,
     tnList: Any,
     ff00: Any,
-    specimen: Any,
-    weight_function: Any,
+    specimen: SpecimenGeometry,
+    weight_function: WeightFunctionData,
     use_depth_limit: bool,
 ) -> int:
     nnn = 1
@@ -288,8 +343,8 @@ def _find_expand_offset_for_grain_span(
     dnList: Any,
     tnList: Any,
     ff00: Any,
-    specimen: Any,
-    weight_function: Any,
+    specimen: SpecimenGeometry,
+    weight_function: WeightFunctionData,
     use_depth_limit: bool,
     grains_per_layer: int,
 ) -> int:
@@ -315,10 +370,10 @@ def _generate_grain_boundaries(
     Anai: Any,
     or1: Any,
     *,
-    specimen: Any,
-    microstructure: Any,
-    material_strength: Any,
-    weight_function: Any,
+    specimen: SpecimenGeometry,
+    microstructure: MicrostructureModel,
+    material_strength: MaterialStrengthProperties,
+    weight_function: WeightFunctionData,
     grain_layers: int,
     grains_per_layer: int,
     orientation_generator: Any,
@@ -486,6 +541,21 @@ def _generate_grain_boundaries(
 
 
 def _solve_stage1_slip_band_length(a: float, σ_fr: list[Any], rnlist: float) -> Any:
+    _assert_finite("stage1 slip-band root input a", a, source="ctsd_root_stage1")
+    _assert_finite(
+        "stage1 slip-band root input sigma_friction_ratio",
+        σ_fr,
+        source="ctsd_root_stage1",
+        a=a,
+        first_boundary_depth=rnlist,
+    )
+    _assert_finite(
+        "stage1 slip-band root input first_boundary_depth",
+        rnlist,
+        source="ctsd_root_stage1",
+        a=a,
+    )
+
     def Eq_1(c: Any, a: Any, σ_fr: Any) -> Any:
         epsilon = 1e-10  # Avoid dividing by zero
         return np.pi / 2 - σ_fr[0] * _safe_arccos(a / (c + epsilon))
@@ -498,7 +568,17 @@ def _solve_stage1_slip_band_length(a: float, σ_fr: list[Any], rnlist: float) ->
             return c_root
         except ValueError:
             upper_bound *= 10
-    return c_root
+    raise CrackLifeDiagnosticError(
+        "stage1 slip-band root was not found ("
+        + _diagnostic_context(
+            source="ctsd_root_stage1",
+            a=a,
+            sigma_friction_ratio=σ_fr,
+            first_boundary_depth=rnlist,
+            max_upper_bound=max_upper_bound,
+        )
+        + ")"
+    )
 
 
 def _solve_multilayer_slip_band_length(
@@ -507,6 +587,22 @@ def _solve_multilayer_slip_band_length(
     σ_fr: list[Any],
     rnList: Any,
 ) -> Any:
+    _assert_finite("multilayer slip-band root input a", a, source="ctsd_root_multilayer")
+    _assert_finite(
+        "multilayer slip-band root input sigma_friction_ratio",
+        σ_fr,
+        source="ctsd_root_multilayer",
+        a=a,
+        layer_index=n,
+    )
+    _assert_finite(
+        "multilayer slip-band root input boundary_depths",
+        rnList,
+        source="ctsd_root_multilayer",
+        a=a,
+        layer_index=n,
+    )
+
     def Eq_n(c: Any, a: Any, n: int, σ_fr: Any, rnList: Any) -> Any:
         epsilon = 1e-10  # Avoid dividing by zero
         return (
@@ -610,8 +706,8 @@ def _advance_ctsd_through_grain_layers(
     τ_List: list[Any],
     grain_boundaries: GrainBoundaryData,
     slip_plane_resolver: Any,
-    specimen: Any,
-    weight_function: Any,
+    specimen: SpecimenGeometry,
+    weight_function: WeightFunctionData,
 ) -> tuple[Any, Any, bool, bool]:
     unstable_fracture = False
     stop_ctsd_evaluation = False
@@ -703,11 +799,11 @@ def _evaluate_ctsd_at_crack_depth(
     Δσ: Any,
     grain_boundaries: GrainBoundaryData,
     *,
-    specimen: Any,
+    specimen: SpecimenGeometry,
     grain_layers: int,
     slip_plane_resolver: Any,
-    material_strength: Any,
-    weight_function: Any,
+    material_strength: MaterialStrengthProperties,
+    weight_function: WeightFunctionData,
 ) -> tuple[Any, Any, bool, bool]:
     # Calculation of CTSD for each evaluation point
     # aii : crack depth ;
@@ -820,41 +916,67 @@ def _evaluate_ctsd_at_crack_depth(
 def _interpolate_stage2_weight_function(
     at: float,
     ac: float,
-    specimen: Any,
-    weight_function: Any,
+    specimen: SpecimenGeometry,
+    weight_function: WeightFunctionData,
 ) -> Any:
     # Define the function to calculate KWeight
     interpolated_value = weight_function.stage2_weight_function(at, ac)
+    _assert_finite(
+        "stage2 weight function",
+        interpolated_value,
+        source="stage2_weight_function",
+        at=at,
+        ac=ac,
+    )
     return 1 / np.sqrt(specimen.thickness * at) * interpolated_value
 
 
 def _interpolate_stage1_weight_function(
     at: float,
     ac: float,
-    specimen: Any,
-    weight_function: Any,
+    specimen: SpecimenGeometry,
+    weight_function: WeightFunctionData,
 ) -> Any:
     # Define the function to calculate KWeight
-    # Extract at, ac, and values from the list of lists
-    at_ac_values = [
-        item[0] for item in weight_function.weight_function_constants
-    ]
-    values = [item[1] for item in weight_function.weight_function_constants]
-
-    # Flatten the at_ac_values and values lists
-    at_values, ac_values = zip(*at_ac_values)
-    at_values = np.array(at_values)
-    ac_values = np.array(ac_values)
-    values = np.array(values)
-    mask_linear = at_values <= 0.1
-
-    if np.any(mask_linear):
+    if not (
+        weight_function.stage1_weight_function_at_min
+        <= at
+        <= weight_function.stage1_weight_function_at_max
+        and weight_function.stage1_weight_function_ac_min
+        <= ac
+        <= weight_function.stage1_weight_function_ac_max
+    ):
+        raise CrackLifeDiagnosticError(
+            "stage1 weight function query is outside min/max domain ("
+            + _diagnostic_context(
+                source="stage1_weight_function_domain",
+                at=at,
+                ac=ac,
+                at_min=weight_function.stage1_weight_function_at_min,
+                at_max=weight_function.stage1_weight_function_at_max,
+                ac_min=weight_function.stage1_weight_function_ac_min,
+                ac_max=weight_function.stage1_weight_function_ac_max,
+            )
+            + ")"
+        )
+    if weight_function.stage1_weight_function_has_linear_points:
         interpolated_value = griddata(
-            np.column_stack((at_values[mask_linear], ac_values[mask_linear])),
-            values[mask_linear],
+            weight_function.stage1_weight_function_points,
+            weight_function.stage1_weight_function_values,
             (at, ac),
             method="linear",
         )
+    _assert_finite(
+        "stage1 weight function",
+        interpolated_value,
+        source="stage1_weight_function",
+        at=at,
+        ac=ac,
+        at_min=weight_function.stage1_weight_function_at_min,
+        at_max=weight_function.stage1_weight_function_at_max,
+        ac_min=weight_function.stage1_weight_function_ac_min,
+        ac_max=weight_function.stage1_weight_function_ac_max,
+    )
     return 1 / np.sqrt(specimen.thickness * at) * interpolated_value
 
 
@@ -863,9 +985,9 @@ def _integrate_k_stage1(
     rt1: float,
     y: float,
     z: float,
-    specimen: Any,
-    weight_function: Any,
-    field_values: Any,
+    specimen: SpecimenGeometry,
+    weight_function: WeightFunctionData,
+    field_values: FieldValueProvider,
 ) -> np.ndarray:
     # Calculation of K-values via weight functions in the fisrt grain (Stage I)
     at_value = aii / specimen.thickness
@@ -885,6 +1007,14 @@ def _integrate_k_stage1(
         )
         for x in weight_function.gauss_points_10
     ]
+    _assert_finite(
+        "stage1 Abaqus field lookup",
+        field_at_gauss_points,
+        source="abaqus_field_lookup_stage1",
+        crack_depth=aii,
+        y=y,
+        z=z,
+    )
 
     for i in range(6):
         WG1[i] = [
@@ -906,6 +1036,17 @@ def _integrate_k_stage1(
         array_b = np.array(weight_function.gauss_weights_10)
         Results[i] = np.sum(array_a * array_b)
 
+    _assert_finite(
+        "stage1 K",
+        Results,
+        source="stage1_k_integration",
+        crack_depth=aii,
+        rt1=rt1,
+        at=at_value,
+        ac=ac_value,
+        y=y,
+        z=z,
+    )
     return np.array(Results)
 
 
@@ -914,9 +1055,9 @@ def _integrate_k_stage2(
     asp: float,
     y: float,
     z: float,
-    specimen: Any,
-    weight_function: Any,
-    field_values: Any,
+    specimen: SpecimenGeometry,
+    weight_function: WeightFunctionData,
+    field_values: FieldValueProvider,
 ) -> np.ndarray:
     # Calculation of K-values via weight functions in the fisrt grain (Stage II)
     at_value = aii / specimen.thickness
@@ -935,6 +1076,14 @@ def _integrate_k_stage2(
         )
         for x in weight_function.gauss_points_10
     ]
+    _assert_finite(
+        "stage2 Abaqus field lookup",
+        field_at_gauss_points,
+        source="abaqus_field_lookup_stage2",
+        crack_depth=aii,
+        y=y,
+        z=z,
+    )
 
     for i in range(6):
         WG1[i] = [
@@ -956,23 +1105,49 @@ def _integrate_k_stage2(
         array_b = np.array(weight_function.gauss_weights_10)
         Results[i] = np.sum(array_a * array_b)
 
+    _assert_finite(
+        "stage2 K",
+        Results,
+        source="stage2_k_integration",
+        crack_depth=aii,
+        aspect_ratio=asp,
+        at=at_value,
+        y=y,
+        z=z,
+    )
     return np.array(Results)
 
 
-def _remote_stress_scale(ai0: float, asp0: float, specimen: Any, weight_function: Any) -> Any:
+def _remote_stress_scale(
+    ai0: float,
+    asp0: float,
+    specimen: SpecimenGeometry,
+    weight_function: WeightFunctionData,
+) -> Any:
     # Functions for converting to remote stresses
     if specimen.remote_type == 1:
-        return weight_function.remote_stress_function(
+        scale = weight_function.remote_stress_function(
             ai0 / specimen.thickness,
             asp0,
         ) * math.sqrt(
             ai0 / weight_function.qq_function(asp0)
         )
     else:
-        return math.sqrt(math.pi * ai0)
+        scale = math.sqrt(math.pi * ai0)
+    _assert_finite(
+        "remote stress scale",
+        scale,
+        source="remote_stress_scale",
+        crack_depth=ai0,
+        aspect_ratio=asp0,
+        at=ai0 / specimen.thickness,
+    )
+    return scale
 
 
-def _surface_reference_principal_stress(field_values: Any, y: float, z: float) -> Any:
+def _surface_reference_principal_stress(
+    field_values: FieldValueProvider, y: float, z: float
+) -> Any:
     σ_11, σ_22, σ_33, τ_12, τ_13, τ_23 = np.array(
         field_values.active_element_total_field_by_depth(0, y, z)
     )
@@ -990,9 +1165,9 @@ def _calculate_closure_factor(
     a: float,
     y: float,
     z: float,
-    crack_growth: Any,
-    material_strength: Any,
-    field_values: Any,
+    crack_growth: CrackGrowthConstants,
+    material_strength: MaterialStrengthProperties,
+    field_values: FieldValueProvider,
     surface_reference_principal_stress: Any,
 ) -> tuple[Any, Any]:
     def Hysterisis(σ_nom1: Any, y: float, z: float) -> Any:
@@ -1061,12 +1236,12 @@ def _calculate_stress_state_at_crack_depth(
     z: float,
     ff00: Any,
     *,
-    specimen: Any,
-    evaluation_points: Any,
-    crack_growth: Any,
-    material_strength: Any,
-    weight_function: Any,
-    field_values: Any,
+    specimen: SpecimenGeometry,
+    evaluation_points: EvaluationPointDefinition,
+    crack_growth: CrackGrowthConstants,
+    material_strength: MaterialStrengthProperties,
+    weight_function: WeightFunctionData,
+    field_values: FieldValueProvider,
     surface_reference_principal_stress: Any,
     load_index: int,
 ) -> tuple[Any, Any, Any, Any, Any, Any]:
@@ -1080,6 +1255,16 @@ def _calculate_stress_state_at_crack_depth(
             )
             σ_remote = 2 * K / _remote_stress_scale(
                 aii, asp, specimen, weight_function
+            )
+            _assert_finite(
+                "stage2 sigma_remote",
+                σ_remote,
+                source="stage2_sigma_remote",
+                evaluation_index=i,
+                crack_depth=aii,
+                aspect_ratio=asp,
+                y=y,
+                z=z,
             )
             UU, σ_op = _calculate_closure_factor(
                 i,
@@ -1096,6 +1281,16 @@ def _calculate_stress_state_at_crack_depth(
             σ_11, σ_22, σ_33, τ_12, τ_13, τ_23 = σ_remote
             Δσ = UU * np.array(
                 [[σ_11, τ_12, τ_13], [τ_12, σ_22, τ_23], [τ_13, τ_23, σ_33]]
+            )
+            _assert_finite(
+                "stage2 Delta_sigma",
+                Δσ,
+                source="stage2_delta_sigma",
+                evaluation_index=i,
+                crack_depth=aii,
+                aspect_ratio=asp,
+                y=y,
+                z=z,
             )
             stress_state_branch = "stage2_weight_function"
         else:
@@ -1112,6 +1307,16 @@ def _calculate_stress_state_at_crack_depth(
             σ_remote = 2 * K / _remote_stress_scale(
                 aii, asp, specimen, weight_function
             )
+            _assert_finite(
+                "stage2 depth-capped sigma_remote",
+                σ_remote,
+                source="stage2_depth_capped_sigma_remote",
+                evaluation_index=i,
+                crack_depth=aii,
+                aspect_ratio=asp,
+                y=y,
+                z=z,
+            )
             UU, σ_op = _calculate_closure_factor(
                 i,
                 crack_growth.sigma_nom[load_index],
@@ -1128,6 +1333,16 @@ def _calculate_stress_state_at_crack_depth(
             Δσ = UU * np.array(
                 [[σ_11, τ_12, τ_13], [τ_12, σ_22, τ_23], [τ_13, τ_23, σ_33]]
             )
+            _assert_finite(
+                "stage2 depth-capped Delta_sigma",
+                Δσ,
+                source="stage2_depth_capped_delta_sigma",
+                evaluation_index=i,
+                crack_depth=aii,
+                aspect_ratio=asp,
+                y=y,
+                z=z,
+            )
             stress_state_branch = "stage2_depth_capped_weight_function"
     else:
 
@@ -1139,6 +1354,16 @@ def _calculate_stress_state_at_crack_depth(
             σ_remote = 2 * K / _remote_stress_scale(
                 aii, asp, specimen, weight_function
             )
+            _assert_finite(
+                "stage1 sigma_remote",
+                σ_remote,
+                source="stage1_sigma_remote",
+                evaluation_index=i,
+                crack_depth=aii,
+                aspect_ratio=asp,
+                y=y,
+                z=z,
+            )
             UU, σ_op = _calculate_closure_factor(
                 i,
                 crack_growth.sigma_nom[load_index],
@@ -1154,6 +1379,16 @@ def _calculate_stress_state_at_crack_depth(
             σ_11, σ_22, σ_33, τ_12, τ_13, τ_23 = σ_remote
             Δσ = UU * np.array(
                 [[σ_11, τ_12, τ_13], [τ_12, σ_22, τ_23], [τ_13, τ_23, σ_33]]
+            )
+            _assert_finite(
+                "stage1 Delta_sigma",
+                Δσ,
+                source="stage1_delta_sigma",
+                evaluation_index=i,
+                crack_depth=aii,
+                aspect_ratio=asp,
+                y=y,
+                z=z,
             )
             stress_state_branch = "stage1_weight_function"
         else:
@@ -1162,6 +1397,16 @@ def _calculate_stress_state_at_crack_depth(
             σ_remote = 2 * np.array(
                 field_values.active_element_total_field_by_depth(0, y, z)
             )
+            _assert_finite(
+                "initial surface sigma_remote",
+                σ_remote,
+                source="initial_surface_field",
+                evaluation_index=i,
+                crack_depth=aii,
+                aspect_ratio=asp,
+                y=y,
+                z=z,
+            )
             UU, σ_op = _calculate_closure_factor(
                 i,
                 crack_growth.sigma_nom[load_index],
@@ -1177,6 +1422,16 @@ def _calculate_stress_state_at_crack_depth(
             σ_11, σ_22, σ_33, τ_12, τ_13, τ_23 = σ_remote
             Δσ = UU * np.array(
                 [[σ_11, τ_12, τ_13], [τ_12, σ_22, τ_23], [τ_13, τ_23, σ_33]]
+            )
+            _assert_finite(
+                "initial surface Delta_sigma",
+                Δσ,
+                source="initial_surface_delta_sigma",
+                evaluation_index=i,
+                crack_depth=aii,
+                aspect_ratio=asp,
+                y=y,
+                z=z,
             )
             stress_state_branch = "initial_surface_field"
 
@@ -1207,7 +1462,7 @@ def _integrate_stage1_life_cycle(
     S_cyc0: list[Any],
     dNdaList: list[Any],
     LifeMin: Any,
-    crack_growth: Any,
+    crack_growth: CrackGrowthConstants,
 ) -> tuple[list[Any], list[Any], bool]:
     if i == 0:
         S_cyc0[i] = 0
@@ -1243,8 +1498,8 @@ def _integrate_stage2_life_cycle_window(
     S_cyc0: list[Any],
     dNdaList: list[Any],
     LifeMin: Any,
-    evaluation_points: Any,
-    crack_growth: Any,
+    evaluation_points: EvaluationPointDefinition,
+    crack_growth: CrackGrowthConstants,
 ) -> tuple[list[Any], list[Any], bool]:
     ai1, ai2 = ai[i - 1] - ai[i - 2], ai[i] - ai[i - 2]
     dNda0 = 1 / (
@@ -1330,8 +1585,8 @@ def _integrate_life_cycle(
     Scyc0Copy: list[Any],
     dNdaListCopy: list[Any],
     LifeMin: Any,
-    evaluation_points: Any,
-    crack_growth: Any,
+    evaluation_points: EvaluationPointDefinition,
+    crack_growth: CrackGrowthConstants,
 ) -> tuple[list[Any], list[Any], bool]:
     S_cyc0 = Scyc0Copy.copy()
     dNdaList = dNdaListCopy.copy()
@@ -1374,8 +1629,8 @@ def _integrate_life_cycle(
 
 def _initialize_crack_growth_history(
     nai: int,
-    specimen: Any,
-    crack_growth: Any,
+    specimen: SpecimenGeometry,
+    crack_growth: CrackGrowthConstants,
 ) -> tuple[
     list[Any],
     list[Any],
@@ -1420,7 +1675,7 @@ def _record_crack_point_state(
     S_σ0: list[Any],
     S_c0: list[Any],
     S_σ_op0: list[Any],
-    crack_growth: Any,
+    crack_growth: CrackGrowthConstants,
 ) -> None:
     S_c0[i] = cc
     S_Δδ0[i] = Δδ
@@ -1450,7 +1705,7 @@ def _fill_history_after_through_thickness(
     nai: int,
     *,
     cc: Any,
-    specimen: Any,
+    specimen: SpecimenGeometry,
     S_Δδ0: list[Any],
     S_K0: list[Any],
     S_asp0: list[Any],
@@ -1498,7 +1753,7 @@ def _crack_life_raw(
     y: float,
     z: float,
     Anai: Any,
-    field_values: Any,
+    field_values: FieldValueProvider,
     S_cyc_result: list[Any],
     S_ai_result: list[Any],
 ) -> tuple[Any, ...]:
@@ -1729,7 +1984,7 @@ def calculate_crack_life(
     y: float,
     z: float,
     anai: Any,
-    field_values: Any,
+    field_values: FieldValueProvider,
     cycles_result: list[Any],
     crack_depth_result: list[Any],
 ) -> CrackLifeResult:

@@ -13,6 +13,7 @@ from .calculation.inputs import (
     CrackGrowthConstants,
     EvaluationPointDefinition,
     FieldDataForCalculation,
+    FieldValueProvider,
     MaterialStrengthProperties,
     MicrostructureModel,
     SpecimenGeometry,
@@ -45,7 +46,7 @@ class SimulationContext:
     params: PaperModelParameters
     model_files: ResolvedModelFiles
     material: object
-    field_values_by_load: dict[int, object]
+    field_values_by_load: dict[int, FieldValueProvider]
     parameter_snapshot: dict[str, object] = field(default_factory=dict)
 
 
@@ -188,7 +189,7 @@ def _build_field_values_input(params: PaperModelParameters) -> FieldValuesInput:
 def build_calculation_input_data_from_prepared_objects(
     params: PaperModelParameters,
     material: object,
-    field_values_by_load: dict[int, object] | None = None,
+    field_values_by_load: dict[int, FieldValueProvider],
 ) -> CalculationInputData:
     return CalculationInputData(
         iteration_numbers=params.iteration_num,
@@ -290,6 +291,13 @@ def _build_weight_function_data(material: object) -> WeightFunctionData:
         qq_function=weight.qq_function,
         secant_ellipse=weight.secant_ellipse,
         weight_function_constants=weight.weight_function_constants,
+        stage1_weight_function_points=weight.stage1_weight_function_points,
+        stage1_weight_function_values=weight.stage1_weight_function_values,
+        stage1_weight_function_has_linear_points=weight.stage1_weight_function_has_linear_points,
+        stage1_weight_function_at_min=weight.stage1_weight_function_at_min,
+        stage1_weight_function_at_max=weight.stage1_weight_function_at_max,
+        stage1_weight_function_ac_min=weight.stage1_weight_function_ac_min,
+        stage1_weight_function_ac_max=weight.stage1_weight_function_ac_max,
         stage2_weight_function=weight.stage2_weight_function,
         gauss_weights_10=weight.gauss_weights_10,
         gauss_points_10=weight.gauss_points_10,
@@ -299,7 +307,7 @@ def _build_weight_function_data(material: object) -> WeightFunctionData:
 
 def _build_field_data_for_calculation(
     material: object,
-    field_values_by_load: dict[int, object] | None,
+    field_values_by_load: dict[int, FieldValueProvider],
 ) -> FieldDataForCalculation:
     field = material.abaqus_field_cache
     return FieldDataForCalculation(

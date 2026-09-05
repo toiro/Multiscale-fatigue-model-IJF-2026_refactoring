@@ -80,6 +80,8 @@ Weight Function RBF 境界整理、追加条件の参照 CSV 比較方針は整�
 
 ## Deferred
 
+高速化や結果変更リスクを伴う整理は [../optimization_issues.md](../optimization_issues.md) に集約する。
+
 - `T25`, `CSS`, `B/G_T50` など、`Parameters.py.ref` にはあるが今回の対象外の条件追加。
 - `SmoothT` は今回対象外のため実装しない。
 - `Smooth` の `sigma_nom_list` 抽出にある Bainite/Martensite 専用分岐は、現在の `B/G/N50R` 条件名と一致しないため今回追加しない。

@@ -44,17 +44,17 @@ class SpecimenGeometry:
     active zone, applied nominal stress list, and symmetry settings.
     """
 
-    remote_type: int | None
-    width: float | None
-    thickness: float | None
-    active_element_area: float | None
-    active_element_size: list[float] | None
-    grain_size_lim: float | None
-    stress_lim: float | None
-    sigma_nom: np.ndarray | None
-    ae_num: int | None
-    ae_yz: np.ndarray | None
-    n_symm: int | None
+    remote_type: int
+    width: float
+    thickness: float
+    active_element_area: float
+    active_element_size: list[float]
+    grain_size_lim: float
+    stress_lim: float
+    sigma_nom: np.ndarray
+    ae_num: int
+    ae_yz: np.ndarray
+    n_symm: int
 
 
 @dataclass(frozen=True)
@@ -65,14 +65,14 @@ class CrackGrowthConstants:
     effect, remote-stress conversion type, and opening-stress parameter.
     """
 
-    r_ratio: float | None
-    sigma_nom: np.ndarray | None
-    c_paris: float | None
-    n_paris: float | None
-    delta_delta_th: float | None
-    k_tr: float | None
-    gb_effect: int | None
-    remote_type: int | None
+    r_ratio: float
+    sigma_nom: np.ndarray
+    c_paris: float
+    n_paris: float
+    delta_delta_th: float
+    k_tr: float
+    gb_effect: int
+    remote_type: int
 
 
 @dataclass(frozen=True)
@@ -83,13 +83,13 @@ class EvaluationPointDefinition:
     first grain and may be combined with generated grain-boundary locations.
     """
 
-    eval_num_stage1: int | None
-    eval_num_stage2: int | None
-    eval_num_total: int | None
-    eval_length_lim: float | None
+    eval_num_stage1: int
+    eval_num_stage2: int
+    eval_num_total: int
+    eval_length_lim: float
     eval_points_full: EvaluationPointFunction | None
     eval_points_stage1: EvaluationPointFunction | None
-    eval_points_stage2: list[float] | None
+    eval_points_stage2: list[float]
 
 
 @dataclass(frozen=True)
@@ -105,15 +105,15 @@ class MicrostructureModel:
     first_grain_cdfr: FloatInterpolator
     first_grain_aspect_cdfr: FloatInterpolator
     first_grain_angle_cdf: FloatInterpolator
-    second_grain_cdf: FloatInterpolator | None
-    second_grain_cdfr: FloatInterpolator | None
-    pearlite_rate_normalized: float | None
-    average_grain_size: float | None
-    maximum_grain_size: float | None
-    grains_per_area_element: float | None
+    second_grain_cdf: FloatInterpolator
+    second_grain_cdfr: FloatInterpolator
+    pearlite_rate_normalized: float
+    average_grain_size: float
+    maximum_grain_size: float
+    grains_per_area_element: float
     generated_grain_data: GeneratedGrainData
-    grain_layers: int | None
-    grains_per_layer: int | None
+    grain_layers: int
+    grains_per_layer: int
     orientation_generator: Callable[[int], np.ndarray]
     slip_plane_resolver: Callable[..., tuple[object, object, object]]
 
@@ -122,22 +122,29 @@ class MicrostructureModel:
 class MaterialStrengthProperties:
     """Mechanical and phase friction strengths used by CTSD and initiation."""
 
-    yield_strength: float | None
-    tensile_strength: float | None
-    reference_stress: float | None
-    reduction_in_area: float | None
-    ferrite_friction_strength: float | None
-    pearlite_friction_strength: float | None
+    yield_strength: float
+    tensile_strength: float
+    reference_stress: float
+    reduction_in_area: float
+    ferrite_friction_strength: float
+    pearlite_friction_strength: float
 
 
 @dataclass(frozen=True)
 class WeightFunctionData:
     """Weight-function and remote-stress resources for K-value calculation."""
 
-    crack_interaction_constant: float | None
+    crack_interaction_constant: float
     qq_function: FloatInterpolator
     secant_ellipse: FloatInterpolator
     weight_function_constants: WeightFunctionConstants
+    stage1_weight_function_points: np.ndarray
+    stage1_weight_function_values: np.ndarray
+    stage1_weight_function_has_linear_points: bool
+    stage1_weight_function_at_min: float
+    stage1_weight_function_at_max: float
+    stage1_weight_function_ac_min: float
+    stage1_weight_function_ac_max: float
     stage2_weight_function: Stage2WeightFunction
     gauss_weights_10: np.ndarray
     gauss_points_10: np.ndarray
@@ -148,14 +155,14 @@ class WeightFunctionData:
 class FieldDataForCalculation:
     """Abaqus field cache and precomputed field values used in stress lookup."""
 
-    field_values_by_load: dict[int, FieldValueProvider] | None
-    elastic_modulus: float | None
-    poisson_ratio: float | None
-    crack_interaction_constant: float | None
-    node_count: int | None
-    step_count: int | None
-    sigma_nom_list: np.ndarray | None
-    sigma_to_step: FloatInterpolator | None
+    field_values_by_load: dict[int, FieldValueProvider]
+    elastic_modulus: float
+    poisson_ratio: float
+    crack_interaction_constant: float
+    node_count: int
+    step_count: int
+    sigma_nom_list: np.ndarray
+    sigma_to_step: FloatInterpolator
     elastic_field_interpolators: object
     plastic_field_interpolators: object
     total_field_interpolators: object
@@ -170,7 +177,7 @@ class CalculationInputData:
     enter the paper's calculation model explicit.
     """
 
-    iteration_numbers: np.ndarray | None
+    iteration_numbers: np.ndarray
     specimen: SpecimenGeometry
     crack_growth: CrackGrowthConstants
     evaluation_points: EvaluationPointDefinition
