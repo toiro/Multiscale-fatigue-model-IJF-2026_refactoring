@@ -46,6 +46,14 @@ Default simulation parameters follow `multiscale-fatigue-model/Multiscale_fatigu
 
 Simulation parameters such as material, stress, and iteration settings are written in the JSON config file. CLI options are kept to systematic execution parameters such as input/output/cache directories. Use seed-fixed configs such as `verification/configs/heavy_seed42.json` and `verification/configs/lightweight_seed42.json` only for reproducible comparison and lightweight verification.
 
+`weight_function_domain_policy` controls what happens when a crack candidate
+reaches outside the supported weight-function or remote-stress interpolation
+domain. The default `error` preserves the diagnostic stop used for comparison
+and reproducibility checks. For report-oriented runs, `truncate_candidate`
+keeps values calculated before the domain limit, does not extrapolate beyond
+the table, and records the domain-limit status in an additional status CSV only
+when such an incomplete candidate occurs.
+
 `resources/` groups input files by simulation condition. Each condition directory
 uses the model name `<steel>_<specimen_type>_<thickness_sign>`, for example
 `resources/N50R_CS_T50/`. When `--base-dir resources` is used, the runner selects

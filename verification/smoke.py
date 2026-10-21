@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -42,6 +43,43 @@ def run_mock_calculation_smoke(repo_root: Path) -> None:
         raise AssertionError("mock calculation did not preserve the expected minimum life")
 
 
+def run_mock_domain_policy_smoke(repo_root: Path) -> None:
+    input_data = _build_mock_input_data()
+    input_data = replace(
+        input_data,
+        weight_function_domain_policy="truncate_candidate",
+        specimen=replace(input_data.specimen, n_symm=2),
+    )
+    calls = {"count": 0}
+
+    def fake_policy_element_life(
+        input_data: CalculationInputData, **kwargs: object
+    ):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return _fake_element_life_result(
+                kwargs,
+                stop_reason="weight_function_domain_limit",
+                valid_until_index=0,
+                is_complete=False,
+                cycles=[np.nan],
+            )
+        return _fake_element_life_result(kwargs)
+
+    result = calculate_load_case(
+        input_data,
+        0,
+        element_life_calculator=fake_policy_element_life,
+    )
+    iteration = result.iteration_results[0]
+    if iteration.minimum_life != 10.0:
+        raise AssertionError("complete candidate was not retained as the SN point")
+    if iteration.domain_limited_element_count != 1:
+        raise AssertionError("domain-limited candidate was not counted")
+    if iteration.best_element_result is None or not iteration.best_element_result.is_complete:
+        raise AssertionError("complete result was not selected when available")
+
+
 class _FakeFieldValues:
     def FieldValues_ACTIVE_Numpy(self, x: float, y: float, z: float) -> list[float]:
         return [1.0, 2.0, 0.5, 0.1, 0.0, 0.0]
@@ -65,6 +103,7 @@ class _FakeFieldValues:
 
 def _build_mock_input_data() -> CalculationInputData:
     return CalculationInputData(
+        weight_function_domain_policy="error",
         iteration_numbers=np.array([0]),
         specimen=SpecimenGeometry(
             remote_type=0,
@@ -145,6 +184,17 @@ def _build_mock_input_data() -> CalculationInputData:
 
 
 def _fake_element_life(input_data: CalculationInputData, **kwargs: object):
+    return _fake_element_life_result(kwargs)
+
+
+def _fake_element_life_result(
+    kwargs: dict[str, object],
+    *,
+    stop_reason: str | None = None,
+    valid_until_index: int = 0,
+    is_complete: bool = True,
+    cycles: list[float] | None = None,
+):
     from multiscale_fatigue_model_ijf_2026.calculation.element_life import (
         ElementLifeResult,
     )
@@ -154,7 +204,10 @@ def _fake_element_life(input_data: CalculationInputData, **kwargs: object):
         area_element_index=kwargs["area_element_index"],
         symmetry_index=kwargs["symmetry_index"],
         location_yz=[0.0, 0.0],
-        cycles=[10.0],
+        stop_reason=stop_reason,
+        valid_until_index=valid_until_index,
+        is_complete=is_complete,
+        cycles=cycles or [10.0],
         crack_depth=[0.1],
         surface_crack_length=[0.2],
         slip_band=[0.3],

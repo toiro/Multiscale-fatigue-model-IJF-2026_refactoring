@@ -6,6 +6,8 @@
 
 現時点の調査では、報告事象そのものを乱数順序込みで完全再現できてはいない。ただし、同じ `G_R008_T24` の入力データを用いて、Stage I weight function の補間範囲外で `K` の元となる weight function が全成分 `nan` になることは再現できた。
 
+その後の `G_R008_T24` 再実行で、追加した診断が実際に発火した。診断内容は `source='stage1_weight_function_domain'` であり、`at=0.005958` は `0.001` から `0.1` の範囲内だった一方、`ac=4.553426` が `WFC3PBT` Stage I 点群の範囲 `0.25` から `4.0` を超えていた。これにより、Stage I weight function の補間範囲外に入ることが `G_R008_T24` 停止原因である可能性は強く支持された。
+
 したがって、報告事象の有力な原因は、`G_R008_T24` の一部 candidate crack が Stage I weight function table `WFC3PBT` の補間可能範囲を超えることである。
 
 研究者側で検討すべき有力な対応は、`WFC3PBT` の Stage I 領域を拡張し、G 材で生成され得る `ac > 4.0` の candidate crack を補間可能範囲に含めることである。ただし、これは weight function table という解析入力データの拡張であり、追加係数の物理的・数値解析的妥当性確認が必要である。
@@ -29,12 +31,14 @@ Stage I の weight function 補間では、`WFC3PBT` のうち `at <= 0.1` の�
 
 - `G_R008_T24` の `WFC3PBT` 実データを用いた最小再現で、`ac > 4.0` の Stage I weight function が `nan` になること。
 - `ac = 4.0` では有限値を返し、`ac = 4.5` では範囲外として診断停止すること。
+- `G_R008_T24` の通常再実行で、追加診断により `source='stage1_weight_function_domain'` が発火したこと。
+- その診断では、`at=0.005958` は Stage I 点群の `at` 範囲内だったが、`ac=4.553426` が `WFC3PBT` の Stage I 点群の `ac` 上限 `4.0` を超えていたこと。
 
 まだ再現できていないこと:
 
-- 報告された active element `17/20` の同一 candidate crack における停止。
+- 報告された active element `17/20` の同一 candidate crack であることの乱数順序込みの完全な同一性。
 
-通常 config では乱数 seed を指定しない運用であるため、再実行しても同じ乱数列、同じ candidate crack、同じ停止位置を再現する保証はない。局所診断入口で rank 17 / symmetry 1-4 を直接実行したが、そこでは報告事象は再現しなかった。これは通常実行で rank 17 に到達するまでの乱数消費順序を再現していないためと考えられる。
+通常 config では乱数 seed を指定しない運用であるため、再実行しても同じ乱数列、同じ candidate crack、同じ停止位置を再現する保証はない。局所診断入口で rank 17 / symmetry 1-4 を直接実行した際には報告事象は再現しなかったが、その後の通常再実行では Stage I weight function domain 診断が発火した。このため、報告事象と同じ機構による停止である可能性は高いが、同一 candidate crack とまでは断定しない。
 
 ## コード上で行った対応
 
@@ -88,4 +92,4 @@ G 材の aspect ratio 分布から生成される初期き裂形状が、`WFC3PB
 
 一方、`K` 全成分 `nan` の発生は、Stage I weight function table `WFC3PBT` の補間範囲外に candidate crack が入ることによる可能性が高い。これは単純なリファクタリングミスではなく、入力データとアルゴリズム適用範囲の整合性に関わる問題である。
 
-報告事象そのものとの同一性は、seed 未指定の通常実行では厳密再現が困難である。今後同様の停止が発生した場合は、追加済みの診断例外により `source='stage1_weight_function_domain'` または `source='stage1_weight_function'` が出るかを確認することで、原因を確定できる。
+追加診断後の `G_R008_T24` 再実行で `source='stage1_weight_function_domain'` が確認され、`ac=4.553426` が `WFC3PBT` Stage I 点群の `ac` 上限 `4.0` を超えていた。したがって、今回の停止機構は Stage I weight function の補間範囲外であると判断できる。ただし、seed 未指定の通常実行であるため、初回報告と同一 candidate crack であることまでは断定しない。

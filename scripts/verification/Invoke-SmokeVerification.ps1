@@ -25,6 +25,9 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $python -c "from pathlib import Path; from verification.smoke import run_mock_calculation_smoke; run_mock_calculation_smoke(Path(r'$RepoRoot'))"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+& $python -c "from pathlib import Path; from verification.smoke import run_mock_domain_policy_smoke; run_mock_domain_policy_smoke(Path(r'$RepoRoot'))"
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 & $python -m verification.validate_output_csv (Join-Path $RepoRoot "tests\fixtures\csv") --require-summary --require-detail
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

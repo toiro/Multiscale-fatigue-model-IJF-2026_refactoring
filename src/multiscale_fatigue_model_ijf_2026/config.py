@@ -24,7 +24,11 @@ SIMULATION_CONFIG_KEYS = {
     "n_symm",
     # Lightweight verification limiter.
     "max_active_elements",
+    # Calculation behavior for weight-function table domain limits.
+    "weight_function_domain_policy",
 }
+
+WEIGHT_FUNCTION_DOMAIN_POLICIES = {"error", "truncate_candidate"}
 
 
 @dataclass(frozen=True)
@@ -47,7 +51,16 @@ class SimulationConfig:
     iteration_count: int | None = None
     n_symm: int | None = None
     max_active_elements: int | None = None
+    weight_function_domain_policy: str = "error"
     delete_existing_output: bool = False
+
+    def __post_init__(self) -> None:
+        if self.weight_function_domain_policy not in WEIGHT_FUNCTION_DOMAIN_POLICIES:
+            supported = ", ".join(sorted(WEIGHT_FUNCTION_DOMAIN_POLICIES))
+            raise ValueError(
+                "Unknown weight_function_domain_policy: "
+                f"{self.weight_function_domain_policy!r}. Supported: {supported}"
+            )
 
     @classmethod
     def smoke(cls, repo_root: Path, output_dir: Path | None = None) -> "SimulationConfig":
@@ -81,4 +94,11 @@ def load_simulation_config(
 
     if "sigma_nom" in data and data["sigma_nom"] is not None:
         data["sigma_nom"] = tuple(data["sigma_nom"])
+    policy = data.get("weight_function_domain_policy", "error")
+    if policy not in WEIGHT_FUNCTION_DOMAIN_POLICIES:
+        supported = ", ".join(sorted(WEIGHT_FUNCTION_DOMAIN_POLICIES))
+        raise ValueError(
+            "Unknown weight_function_domain_policy: "
+            f"{policy!r}. Supported: {supported}"
+        )
     return SimulationConfig(base_dir=base_dir, output_dir=output_dir, **data)

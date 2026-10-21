@@ -21,6 +21,17 @@ DETAIL_COLUMNS = {
 }
 
 SUMMARY_COLUMNS = {"σ_nom", "Iteration", "minimum life", "yz"}
+STATUS_COLUMNS = {
+    "σ_nom",
+    "Iteration",
+    "minimum life",
+    "selected is complete",
+    "selected stop reason",
+    "selected valid until index",
+    "complete element count",
+    "domain limited element count",
+    "incomplete element count",
+}
 
 
 def main() -> int:
@@ -37,6 +48,7 @@ def main() -> int:
 
     detail_count = 0
     summary_count = 0
+    status_count = 0
     errors: list[str] = []
 
     for path in csv_paths:
@@ -49,6 +61,8 @@ def main() -> int:
         columns = set(frame.columns)
         if DETAIL_COLUMNS.issubset(columns):
             detail_count += 1
+        elif STATUS_COLUMNS.issubset(columns):
+            status_count += 1
         elif SUMMARY_COLUMNS.issubset(columns):
             summary_count += 1
         else:
@@ -70,7 +84,7 @@ def main() -> int:
 
     print(
         f"CSV validation passed: {len(csv_paths)} file(s), "
-        f"{detail_count} detail, {summary_count} summary."
+        f"{detail_count} detail, {summary_count} summary, {status_count} status."
     )
     return 0
 

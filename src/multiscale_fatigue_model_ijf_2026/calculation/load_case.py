@@ -28,6 +28,9 @@ class IterationResult:
     minimum_life: float
     weakest_location_yz: LocationYZ | None
     best_element_result: ElementLifeResult | None
+    complete_element_count: int = 0
+    domain_limited_element_count: int = 0
+    incomplete_element_count: int = 0
 
 
 @dataclass
@@ -69,7 +72,11 @@ def calculate_load_case(
     for iteration_index in range(len(iteration_numbers)):
         min_cycles = 10**18
         best_result: ElementLifeResult | None = None
+        partial_result: ElementLifeResult | None = None
         weakest_location = None
+        complete_element_count = 0
+        domain_limited_element_count = 0
+        incomplete_element_count = 0
 
         s_ai_sub = [0] * (
             evaluation_points.eval_num_stage1 + 3 * evaluation_points.eval_num_stage2
@@ -94,7 +101,19 @@ def calculate_load_case(
                     cycles_result=s_cyc_sub,
                     crack_depth_result=s_ai_sub,
                 )
-                if element_result.cycles[-1] < s_cyc_sub[-1]:
+                if element_result.is_complete:
+                    complete_element_count += 1
+                else:
+                    incomplete_element_count += 1
+                    if element_result.stop_reason == "weight_function_domain_limit":
+                        domain_limited_element_count += 1
+                    if partial_result is None:
+                        partial_result = element_result
+
+                if (
+                    element_result.is_complete
+                    and element_result.cycles[-1] < s_cyc_sub[-1]
+                ):
                     s_cyc_sub = element_result.cycles
                     s_ai_sub = element_result.crack_depth
                     best_result = element_result
@@ -103,12 +122,17 @@ def calculate_load_case(
                 min_cycles = best_result.cycles[-1]
                 weakest_location = best_result.location_yz
 
+        output_result = best_result if best_result is not None else partial_result
+
         load_result.iteration_results.append(
             IterationResult(
                 iteration=int(iteration_numbers[iteration_index]) + 1,
                 minimum_life=min_cycles,
                 weakest_location_yz=weakest_location,
-                best_element_result=best_result,
+                best_element_result=output_result,
+                complete_element_count=complete_element_count,
+                domain_limited_element_count=domain_limited_element_count,
+                incomplete_element_count=incomplete_element_count,
             )
         )
 

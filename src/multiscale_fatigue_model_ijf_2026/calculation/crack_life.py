@@ -35,6 +35,9 @@ from .inputs import (
 class CrackLifeResult:
     """Single candidate crack-growth history used inside calculation."""
 
+    stop_reason: str | None
+    valid_until_index: int
+    is_complete: bool
     ctsd: NumericHistory
     k_value: NumericHistory
     aspect_ratio: NumericHistory
@@ -50,6 +53,10 @@ class CrackLifeResult:
 
 class CrackLifeDiagnosticError(RuntimeError):
     """Calculation stopped at a diagnosable invalid numerical state."""
+
+
+class WeightFunctionDomainError(CrackLifeDiagnosticError):
+    """Calculation reached outside the supported weight-function domain."""
 
 
 def _diagnostic_context(**items: object) -> str:
@@ -89,6 +96,15 @@ def _assert_finite(name: str, value: object, **context: object) -> None:
         raise CrackLifeDiagnosticError(message)
 
 
+def _assert_weight_function_domain_finite(
+    name: str, value: object, **context: object
+) -> None:
+    try:
+        _assert_finite(name, value, **context)
+    except CrackLifeDiagnosticError as exc:
+        raise WeightFunctionDomainError(str(exc)) from exc
+
+
 @dataclass
 class GrainBoundaryData:
     """Grain-boundary layers generated once for one candidate crack.
@@ -109,20 +125,26 @@ def _crack_result_from_raw(raw: tuple[object, ...]) -> CrackLifeResult:
     """Name the legacy crack raw tuple without changing tuple order.
 
     Raw tuple order:
-    1. CTSD
-    2. K value
-    3. aspect ratio
-    4. stress ratio
-    5. effective stress
-    6. slip-band length
-    7. cycles
-    8. crack depth
-    9. surface crack length
-    10. grain-boundary locations
-    11. opening stress
+    1. stop reason
+    2. valid-until index
+    3. completion flag
+    4. CTSD
+    5. K value
+    6. aspect ratio
+    7. stress ratio
+    8. effective stress
+    9. slip-band length
+    10. cycles
+    11. crack depth
+    12. surface crack length
+    13. grain-boundary locations
+    14. opening stress
     """
 
     (
+        stop_reason,
+        valid_until_index,
+        is_complete,
         ctsd,
         k_value,
         aspect_ratio,
@@ -136,6 +158,9 @@ def _crack_result_from_raw(raw: tuple[object, ...]) -> CrackLifeResult:
         opening_stress,
     ) = raw
     return CrackLifeResult(
+        stop_reason=stop_reason,
+        valid_until_index=valid_until_index,
+        is_complete=is_complete,
         ctsd=ctsd,
         k_value=k_value,
         aspect_ratio=aspect_ratio,
@@ -921,7 +946,7 @@ def _interpolate_stage2_weight_function(
 ) -> Any:
     # Define the function to calculate KWeight
     interpolated_value = weight_function.stage2_weight_function(at, ac)
-    _assert_finite(
+    _assert_weight_function_domain_finite(
         "stage2 weight function",
         interpolated_value,
         source="stage2_weight_function",
@@ -946,7 +971,7 @@ def _interpolate_stage1_weight_function(
         <= ac
         <= weight_function.stage1_weight_function_ac_max
     ):
-        raise CrackLifeDiagnosticError(
+        raise WeightFunctionDomainError(
             "stage1 weight function query is outside min/max domain ("
             + _diagnostic_context(
                 source="stage1_weight_function_domain",
@@ -966,7 +991,7 @@ def _interpolate_stage1_weight_function(
             (at, ac),
             method="linear",
         )
-    _assert_finite(
+    _assert_weight_function_domain_finite(
         "stage1 weight function",
         interpolated_value,
         source="stage1_weight_function",
@@ -1134,7 +1159,7 @@ def _remote_stress_scale(
         )
     else:
         scale = math.sqrt(math.pi * ai0)
-    _assert_finite(
+    _assert_weight_function_domain_finite(
         "remote stress scale",
         scale,
         source="remote_stress_scale",
@@ -1654,6 +1679,33 @@ def _initialize_crack_growth_history(
     return S_Δδ0, S_K0, S_asp0, S_RR0, S_σ0, S_c0, S_cyc0, S_σ_op0
 
 
+def _fill_unvisited_history_with_nan(
+    start_index: int,
+    *,
+    ai: list[Any],
+    surfai: list[Any],
+    S_Δδ0: list[Any],
+    S_K0: list[Any],
+    S_asp0: list[Any],
+    S_RR0: list[Any],
+    S_σ0: list[Any],
+    S_c0: list[Any],
+    S_cyc0: list[Any],
+    S_σ_op0: list[Any],
+) -> None:
+    for j in range(start_index, len(ai)):
+        ai[j] = float("nan")
+        surfai[j] = float("nan")
+        S_Δδ0[j] = float("nan")
+        S_K0[j] = float("nan")
+        S_asp0[j] = float("nan")
+        S_RR0[j] = float("nan")
+        S_σ0[j] = float("nan")
+        S_c0[j] = float("nan")
+        S_cyc0[j] = float("nan")
+        S_σ_op0[j] = float("nan")
+
+
 def _record_crack_point_state(
     i: int,
     aii: float,
@@ -1773,6 +1825,7 @@ def _crack_life_raw(
     microstructure = input_data.microstructure
     material_strength = input_data.material_strength
     weight_function = input_data.weight_function
+    weight_function_domain_policy = input_data.weight_function_domain_policy
     grain_layers = microstructure.grain_layers
     grains_per_layer = microstructure.grains_per_layer
     orientation_generator = microstructure.orientation_generator
@@ -1841,6 +1894,9 @@ def _crack_life_raw(
     )
     # Calculate CTSD, slip zone length, and number of loading cycles for each crack length， then loop for life calculation.
     # start_time_LIFE = time.time()
+    stop_reason = None
+    valid_until_index = -1
+    is_complete = True
     for i in range(nai):
         aii = ai[i]
         is_stage1 = i < evaluation_points.eval_num_stage1
@@ -1849,40 +1905,61 @@ def _crack_life_raw(
             i - evaluation_points.eval_num_stage1 + 1
         ) % 3 == 0
 
-        # Stress intensity, remote stress, closure, and CTSD.
-        asp, σ_remote, K, UU, Δσ, σ_op = _calculate_stress_state_at_crack_depth(
-            i,
-            aii,
-            rt1,
-            y,
-            z,
-            ff00,
-            specimen=specimen,
-            evaluation_points=evaluation_points,
-            crack_growth=crack_growth,
-            material_strength=material_strength,
-            weight_function=weight_function,
-            field_values=field_values,
-            surface_reference_principal_stress=surface_reference_principal_stress,
-            load_index=load_quene,
-        )
-        # start_time_CTSD = time.time()
-        (
-            cc,
-            Δδ,
-            unstable_fracture,
-            stop_due_to_ctsd_evaluation,
-        ) = _evaluate_ctsd_at_crack_depth(
-            aii,
-            i,
-            Δσ,
-            grain_boundaries,
-            specimen=specimen,
-            grain_layers=grain_layers,
-            slip_plane_resolver=slip_plane_resolver,
-            material_strength=material_strength,
-            weight_function=weight_function,
-        )
+        try:
+            # Stress intensity, remote stress, closure, and CTSD.
+            asp, σ_remote, K, UU, Δσ, σ_op = _calculate_stress_state_at_crack_depth(
+                i,
+                aii,
+                rt1,
+                y,
+                z,
+                ff00,
+                specimen=specimen,
+                evaluation_points=evaluation_points,
+                crack_growth=crack_growth,
+                material_strength=material_strength,
+                weight_function=weight_function,
+                field_values=field_values,
+                surface_reference_principal_stress=surface_reference_principal_stress,
+                load_index=load_quene,
+            )
+            # start_time_CTSD = time.time()
+            (
+                cc,
+                Δδ,
+                unstable_fracture,
+                stop_due_to_ctsd_evaluation,
+            ) = _evaluate_ctsd_at_crack_depth(
+                aii,
+                i,
+                Δσ,
+                grain_boundaries,
+                specimen=specimen,
+                grain_layers=grain_layers,
+                slip_plane_resolver=slip_plane_resolver,
+                material_strength=material_strength,
+                weight_function=weight_function,
+            )
+        except WeightFunctionDomainError:
+            if weight_function_domain_policy != "truncate_candidate":
+                raise
+            stop_reason = "weight_function_domain_limit"
+            valid_until_index = i - 1
+            is_complete = False
+            _fill_unvisited_history_with_nan(
+                i,
+                ai=ai,
+                surfai=surfai,
+                S_Δδ0=S_Δδ0,
+                S_K0=S_K0,
+                S_asp0=S_asp0,
+                S_RR0=S_RR0,
+                S_σ0=S_σ0,
+                S_c0=S_c0,
+                S_cyc0=S_cyc0,
+                S_σ_op0=S_σ_op0,
+            )
+            break
         # end_time_CTSD = time.time()
 
         if stop_due_to_ctsd_evaluation:
@@ -1933,6 +2010,7 @@ def _crack_life_raw(
             evaluation_points,
             crack_growth,
         )
+        valid_until_index = i
         # end_time_cycle = time.time()
 
         if stop_due_to_life_integration_limit:
@@ -1959,6 +2037,9 @@ def _crack_life_raw(
     # end_time_LIFE = time.time()
 
     return (
+        stop_reason,
+        valid_until_index,
+        is_complete,
         S_Δδ0,
         S_K0,
         S_asp0,

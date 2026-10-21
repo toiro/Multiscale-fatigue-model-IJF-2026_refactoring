@@ -21,8 +21,11 @@ def build_calculation_input_data_from_prepared_objects(
     params: PaperModelParameters,
     material: MaterialDataImporter,
     field_values_by_load: dict[int, FieldValueProvider],
+    *,
+    weight_function_domain_policy: str = "error",
 ) -> CalculationInputData:
     return CalculationInputData(
+        weight_function_domain_policy=weight_function_domain_policy,
         iteration_numbers=params.iteration_num,
         specimen=_build_specimen_geometry(params),
         crack_growth=_build_crack_growth_constants(params),

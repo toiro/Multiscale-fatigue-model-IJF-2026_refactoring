@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 from dataclasses import replace
 from pathlib import Path
 
@@ -70,11 +71,16 @@ def _prepare_output_dir(config: SimulationConfig) -> None:
 
 
 def _run(config: SimulationConfig) -> None:
+    started_at = datetime.datetime.now()
+    print(f"Run started: {started_at}")
     _prepare_output_dir(config)
     context = build_context(config)
     input_data = build_calculation_input_data(context)
     output_context = build_output_context(context)
     run_simulation(input_data, output_context=output_context, write_outputs=True)
+    completed_at = datetime.datetime.now()
+    print(f"Run completed: {context.model_files.model_name}")
+    print(f"Run elapsed: {completed_at - started_at}")
 
 
 def main(argv: list[str] | None = None) -> None:

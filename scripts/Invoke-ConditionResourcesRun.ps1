@@ -51,6 +51,9 @@ function Invoke-NativeCommand {
     }
 }
 
+Write-Host "Base directory: $RepoRoot"
+Write-Host "Output directory: $OutputDir"
+
 Invoke-NativeCommand {
     & $Python -m multiscale_fatigue_model_ijf_2026.cli run `
         --config-file $ConfigFile `

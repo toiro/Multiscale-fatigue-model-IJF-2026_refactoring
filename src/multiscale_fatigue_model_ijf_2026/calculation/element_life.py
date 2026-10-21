@@ -30,6 +30,9 @@ class ElementLifeResult:
     area_element_index: int
     symmetry_index: int
     location_yz: LocationYZ
+    stop_reason: str | None
+    valid_until_index: int
+    is_complete: bool
     cycles: NumericHistory
     crack_depth: NumericHistory
     surface_crack_length: NumericHistory
@@ -47,7 +50,7 @@ def _is_better_crack_candidate(
     crack_result: CrackLifeResult,
     cycles_result: NumericHistory,
 ) -> bool:
-    return crack_result.cycles[-1] < cycles_result[-1]
+    return crack_result.is_complete and crack_result.cycles[-1] < cycles_result[-1]
 
 
 def _element_life_raw(
@@ -106,6 +109,9 @@ def _element_life_raw(
     S_σ = [0] * eval_num_total
     S_cyc = [10**15] * eval_num_total  # number of loading cycles
     S_σ_op = [0] * eval_num_total
+    stop_reason = None
+    valid_until_index = -1
+    is_complete = True
     rd = 0  # d/dmax
     RnList = []
 
@@ -125,6 +131,9 @@ def _element_life_raw(
         nonlocal S_cyc
         nonlocal S_cyc_result
         nonlocal S_σ_op
+        nonlocal stop_reason
+        nonlocal valid_until_index
+        nonlocal is_complete
         nonlocal rd
         nonlocal RnList
 
@@ -145,6 +154,9 @@ def _element_life_raw(
         S_cyc = crack_result.cycles
         S_cyc_result = crack_result.cycles
         S_σ_op = crack_result.opening_stress
+        stop_reason = crack_result.stop_reason
+        valid_until_index = crack_result.valid_until_index
+        is_complete = crack_result.is_complete
         rd = FList[Grain_i] / microstructure.maximum_grain_size
         RnList = crack_result.grain_boundary_locations
         print(
@@ -256,6 +268,8 @@ def _element_life_raw(
     Anai = prepareAnai(y, z)
     if τ_max > material_strength.ferrite_friction_strength and fNum > 0:
         # Life evaluation loop for single element----------------------------------------------Area Element---------------------------------------------------------------
+        partial_crack_result: CrackLifeResult | None = None
+        partial_grain_index = -1
         for Grain_i in range(int(fNum)):
             τ1, θn1, θs1 = microstructure.slip_plane_resolver(FoList[0], σ)
             if τ1 > material_strength.ferrite_friction_strength:
@@ -272,6 +286,15 @@ def _element_life_raw(
 
                 if _is_better_crack_candidate(crack_result, S_cyc_result):
                     adopt_best_crack_candidate(crack_result, Grain_i)
+                elif (
+                    not crack_result.is_complete
+                    and partial_crack_result is None
+                    and S_yz == ["no data", "no data"]
+                ):
+                    partial_crack_result = crack_result
+                    partial_grain_index = Grain_i
+        if partial_crack_result is not None and S_yz == ["no data", "no data"]:
+            adopt_best_crack_candidate(partial_crack_result, partial_grain_index)
 
     else:
         print(
@@ -282,6 +305,9 @@ def _element_life_raw(
         area_element_index=ia,
         symmetry_index=ia0,
         location_yz=S_yz,
+        stop_reason=stop_reason,
+        valid_until_index=valid_until_index,
+        is_complete=is_complete,
         cycles=S_cyc,
         crack_depth=S_ai,
         surface_crack_length=S_surf,

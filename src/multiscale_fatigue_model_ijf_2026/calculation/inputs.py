@@ -167,6 +167,7 @@ class CalculationInputData:
     enter the paper's calculation model explicit.
     """
 
+    weight_function_domain_policy: str
     iteration_numbers: np.ndarray
     specimen: SpecimenGeometry
     crack_growth: CrackGrowthConstants

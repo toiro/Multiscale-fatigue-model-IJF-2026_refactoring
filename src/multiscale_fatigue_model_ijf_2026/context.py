@@ -76,6 +76,7 @@ def build_context(config: SimulationConfig) -> SimulationContext:
         params,
         material,
         field_values_by_load,
+        weight_function_domain_policy=config.weight_function_domain_policy,
     )
 
     return SimulationContext(

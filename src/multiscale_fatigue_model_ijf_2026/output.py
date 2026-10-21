@@ -53,6 +53,14 @@ def summary_filename(context: OutputContext, load_result: LoadCaseResult) -> str
     )
 
 
+def status_filename(context: OutputContext, load_result: LoadCaseResult) -> str:
+    return (
+        f"{context.model_name}_{context.n_paris}_{context.delta_delta_th}_"
+        f"{load_result.sigma_nom}_{context.ferrite_friction_strength}."
+        f"{context.r_ratio}.status.csv"
+    )
+
+
 def element_result_to_dataframe(result: ElementLifeResult) -> pd.DataFrame:
     max_len = max(len(result.crack_depth), len(result.grain_boundary_locations))
     return pd.DataFrame(
@@ -87,6 +95,34 @@ def summary_to_dataframe(load_result: LoadCaseResult) -> pd.DataFrame:
     )
 
 
+def status_to_dataframe(load_result: LoadCaseResult) -> pd.DataFrame:
+    rows = []
+    for iteration in load_result.iteration_results:
+        result = iteration.best_element_result
+        rows.append(
+            {
+                "σ_nom": load_result.sigma_nom,
+                "Iteration": iteration.iteration,
+                "minimum life": iteration.minimum_life,
+                "selected is complete": (
+                    np.nan if result is None else result.is_complete
+                ),
+                "selected stop reason": (
+                    np.nan if result is None else result.stop_reason
+                ),
+                "selected valid until index": (
+                    np.nan if result is None else result.valid_until_index
+                ),
+                "complete element count": iteration.complete_element_count,
+                "domain limited element count": (
+                    iteration.domain_limited_element_count
+                ),
+                "incomplete element count": iteration.incomplete_element_count,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def write_load_case_outputs(context: OutputContext, load_result: LoadCaseResult) -> None:
     output_dir = context.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -104,6 +140,14 @@ def write_load_case_outputs(context: OutputContext, load_result: LoadCaseResult)
         output_dir / summary_filename(context, load_result),
         index=False,
     )
+    if any(
+        iteration.incomplete_element_count > 0
+        for iteration in load_result.iteration_results
+    ):
+        status_to_dataframe(load_result).to_csv(
+            output_dir / status_filename(context, load_result),
+            index=False,
+        )
 
 
 def _pad_list(values: Sequence[object] | np.ndarray, target_len: int) -> list[object]:
