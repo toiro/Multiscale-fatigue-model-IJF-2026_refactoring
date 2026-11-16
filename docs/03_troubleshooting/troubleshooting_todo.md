@@ -8,6 +8,23 @@
 
 ## Active Todo
 
+### B_Smooth_T16 / 135 MPa の CTSD NaN
+
+- [x] 元の診断 CSV から、CTSD と寿命積分値の非有限値を確認する。
+- [x] seed42 の単一要素で最初の非有限 CTSD の入力と根探索の戻り値を捕捉する。
+- [x] 保存入力だけで、未到達の粒界を含む CTSD 積分の負の平方根を再現する。
+- [x] 旧実装の局所関数を同じ入力で実行し、同じ根と NaN を確認する。
+- [x] 再現用 `.ps1` と最小入力 fixture、調査報告を追加する。
+- [x] CTSD NaN以外の経路を保存済み記録とseed42の単一要素で確認し、Stage IIしきい値未満による非採用を追跡する。
+- [x] 候補ごとの終了分岐・末尾寿命・比較値を記録する `Invoke-CandidateLifeAudit.ps1` を追加する。
+- [ ] 摩擦強度比の判定対象の層と、すべり帯の到達粒界範囲の整合方法をモデル仕様と照合する。
+  数式・分岐の修正は別タスクとし、今回の調査では実施しない。
+
+詳細と再現手順は [B_Smooth_T16_ctsd_nan_report.md](B_Smooth_T16_ctsd_nan_report.md) を参照する。
+元の seed 未固定の全イベントが同じ原因かは未確定。
+
+### G_R008_T24 の継続調査
+
 - [x] `crack_life.py` の NaN 発生経路を、Stage I weight function、Stage II weight function、remote stress function、Abaqus field lookup、CTSD root solving に分類する。
 - [x] 計算補正を行わない診断例外クラスの置き場所と名前を決める。
 - [x] 非有限値検査 helper を追加し、例外メッセージに値名と診断 context を含める。

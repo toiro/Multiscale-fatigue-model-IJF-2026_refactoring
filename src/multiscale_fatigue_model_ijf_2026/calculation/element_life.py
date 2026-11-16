@@ -3,7 +3,7 @@ from __future__ import annotations
 import random  # The random library is used to generate random numbers
 import warnings
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np  # The NumPy library is used to process arrays
 
@@ -11,7 +11,8 @@ import numpy as np  # The NumPy library is used to process arrays
 warnings.filterwarnings("ignore", category=np.RankWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-from .crack_life import CrackLifeResult, calculate_crack_life
+from .crack_life import CrackLifeResult, _observe_finite, calculate_crack_life
+from .diagnostics import CalculationDiagnostic, CrackLifeDiagnosticError
 from .inputs import (
     CalculationInputData,
     FieldValueProvider,
@@ -44,6 +45,10 @@ class ElementLifeResult:
     aspect_ratio: NumericHistory
     opening_stress: NumericHistory
     grain_boundary_locations: NumericHistory
+    history_state: str | None = None  # initial / adopted; None means provenance not supplied.
+    initial_history_reasons: set[str] = field(default_factory=set)
+    selected_grain_index: int | None = None
+    diagnostics: list[CalculationDiagnostic] = field(default_factory=list)
 
 
 def _is_better_crack_candidate(
@@ -114,6 +119,10 @@ def _element_life_raw(
     is_complete = True
     rd = 0  # d/dmax
     RnList = []
+    diagnostics: list[CalculationDiagnostic] = []
+    initial_history_reasons: set[str] = set()
+    selected_grain_index = None
+    crack_calculation_called = False
 
     def adopt_best_crack_candidate(
         crack_result: CrackLifeResult,
@@ -136,6 +145,7 @@ def _element_life_raw(
         nonlocal is_complete
         nonlocal rd
         nonlocal RnList
+        nonlocal selected_grain_index
 
         # Random sampling: crack-initiation location inside the area element.
         S_yz = [
@@ -159,6 +169,7 @@ def _element_life_raw(
         is_complete = crack_result.is_complete
         rd = FList[Grain_i] / microstructure.maximum_grain_size
         RnList = crack_result.grain_boundary_locations
+        selected_grain_index = Grain_i
         print(
             f"  Ae No. {(ia0) * specimen.n_symm + n+1}  Grain: {Grain_i + 1}/{FNum} ({fNum})  d/dmax={rd}  "
             + f"  N={S_cyc[-1]}"
@@ -266,23 +277,42 @@ def _element_life_raw(
 
     FoList = generateFoList()
     Anai = prepareAnai(y, z)
+    # Observe invalid comparisons without changing legacy initiation decisions.
+    _observe_finite(
+        "initiation_conditions", [τ_max, material_strength.ferrite_friction_strength, fNum],
+        diagnostics, y=y, z=z,
+    )
     if τ_max > material_strength.ferrite_friction_strength and fNum > 0:
         # Life evaluation loop for single element----------------------------------------------Area Element---------------------------------------------------------------
         partial_crack_result: CrackLifeResult | None = None
         partial_grain_index = -1
         for Grain_i in range(int(fNum)):
             τ1, θn1, θs1 = microstructure.slip_plane_resolver(FoList[0], σ)
+            _observe_finite(
+                "resolved_shear_stress", τ1, diagnostics, grain_index=Grain_i, y=y, z=z,
+            )
             if τ1 > material_strength.ferrite_friction_strength:
-                crack_result = CrackLifeCalc(
-                    FList[Grain_i],
-                    FoList[Grain_i],
-                    y,
-                    z,
-                    Anai,
-                    field_values,
-                    S_cyc_result,
-                    S_ai_result,
-                )
+                crack_calculation_called = True
+                try:
+                    crack_result = CrackLifeCalc(
+                        FList[Grain_i],
+                        FoList[Grain_i],
+                        y,
+                        z,
+                        Anai,
+                        field_values,
+                        S_cyc_result,
+                        S_ai_result,
+                    )
+                except CrackLifeDiagnosticError as exc:
+                    exc.context.update(grain_index=Grain_i)
+                    raise
+                for diagnostic in crack_result.diagnostics:
+                    diagnostic.context.update(
+                        grain_index=Grain_i, y=y, z=z,
+                        grain_size=FList[Grain_i],
+                    )
+                diagnostics.extend(crack_result.diagnostics)
 
                 if _is_better_crack_candidate(crack_result, S_cyc_result):
                     adopt_best_crack_candidate(crack_result, Grain_i)
@@ -293,13 +323,21 @@ def _element_life_raw(
                 ):
                     partial_crack_result = crack_result
                     partial_grain_index = Grain_i
+            else:
+                initial_history_reasons.add("resolved_shear_condition_not_met")
         if partial_crack_result is not None and S_yz == ["no data", "no data"]:
             adopt_best_crack_candidate(partial_crack_result, partial_grain_index)
 
     else:
+        if not τ_max > material_strength.ferrite_friction_strength:
+            initial_history_reasons.add("maximum_shear_condition_not_met")
+        if not fNum > 0:
+            initial_history_reasons.add("no_evaluated_ferrite_grain")
         print(
             f"  Ae No. {(ia0) * specimen.n_symm + n+1}  fatigue crack will not initiate in this area element"
         )
+    if selected_grain_index is None and crack_calculation_called:
+        initial_history_reasons.add("no_candidate_adopted")
     return ElementLifeResult(
         area_element_rank=n,
         area_element_index=ia,
@@ -319,6 +357,10 @@ def _element_life_raw(
         aspect_ratio=S_asp,
         opening_stress=S_σ_op,
         grain_boundary_locations=RnList,
+        history_state="initial" if selected_grain_index is None else "adopted",
+        initial_history_reasons=initial_history_reasons if selected_grain_index is None else set(),
+        selected_grain_index=selected_grain_index,
+        diagnostics=diagnostics,
     )
 
 
@@ -345,15 +387,23 @@ def calculate_element_life(
     2. Run the legacy-equivalent element kernel with CalculationInputData.
     3. Return the best area-element crack history as ElementLifeResult.
     """
-    return _element_life_raw(
-        input_data,
-        load_index=load_index,
-        ia0=symmetry_index,
-        n=area_element_rank,
-        ia=area_element_index,
-        σ=stress_tensor,
-        τ_max=max_shear_stress,
-        field_values=field_values,
-        S_cyc_result=cycles_result,
-        S_ai_result=crack_depth_result,
-    )
+    try:
+        return _element_life_raw(
+            input_data,
+            load_index=load_index,
+            ia0=symmetry_index,
+            n=area_element_rank,
+            ia=area_element_index,
+            σ=stress_tensor,
+            τ_max=max_shear_stress,
+            field_values=field_values,
+            S_cyc_result=cycles_result,
+            S_ai_result=crack_depth_result,
+        )
+    except CrackLifeDiagnosticError as exc:
+        exc.context.update(
+            area_element_index=area_element_index,
+            area_element_rank=area_element_rank,
+            symmetry_index=symmetry_index,
+        )
+        raise

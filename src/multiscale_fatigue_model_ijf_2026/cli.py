@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .config import SimulationConfig, load_simulation_config
 from .context import build_calculation_input_data, build_context
-from .output import build_output_context
+from .output import build_output_context, write_failure_diagnostic
 from .runner import run_simulation
 
 
@@ -18,9 +18,14 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--cache-dir", type=Path, default=None)
     parser.add_argument(
+        "--write-diagnostics",
+        action="store_true",
+        help="Write diagnostic CSVs and diagnostic notices (disabled by default).",
+    )
+    parser.add_argument(
         "--delete-existing-output",
         action="store_true",
-        help="Delete existing CSV files in --output-dir before running.",
+        help="Delete existing result CSVs and diagnostics/*.csv in --output-dir before running.",
     )
 
 
@@ -68,16 +73,30 @@ def _prepare_output_dir(config: SimulationConfig) -> None:
     if config.delete_existing_output:
         for path in config.output_dir.glob("*.csv"):
             path.unlink()
+        for path in (config.output_dir / "diagnostics").glob("*.csv"):
+            path.unlink()
 
 
-def _run(config: SimulationConfig) -> None:
+def _run(config: SimulationConfig, *, write_diagnostics: bool = False) -> None:
     started_at = datetime.datetime.now()
     print(f"Run started: {started_at}")
     _prepare_output_dir(config)
-    context = build_context(config)
+    try:
+        context = build_context(config)
+    except Exception as exc:  # Save input failures when requested; no recovery is attempted.
+        if write_diagnostics:
+            write_failure_diagnostic(
+                config.output_dir, exc, phase="input_preparation",
+                steel=config.steel, specimen_type=config.specimen_type,
+                thickness_sign=config.thickness_sign,
+            )
+        raise
     input_data = build_calculation_input_data(context)
     output_context = build_output_context(context)
-    run_simulation(input_data, output_context=output_context, write_outputs=True)
+    run_simulation(
+        input_data, output_context=output_context, write_outputs=True,
+        write_diagnostics=write_diagnostics,
+    )
     completed_at = datetime.datetime.now()
     print(f"Run completed: {context.model_files.model_name}")
     print(f"Run elapsed: {completed_at - started_at}")
@@ -101,7 +120,7 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     if args.command == "run":
-        _run(_build_run_config(args, run_parser))
+        _run(_build_run_config(args, run_parser), write_diagnostics=args.write_diagnostics)
         return
 
     raise ValueError(f"Unknown command: {args.command}")

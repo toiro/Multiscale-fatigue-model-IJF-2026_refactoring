@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .diagnostics import CalculationDiagnostic, CrackLifeDiagnosticError
 from .element_life import ElementLifeResult, calculate_element_life
 from .inputs import (
     CalculationInputData,
@@ -31,6 +32,8 @@ class IterationResult:
     complete_element_count: int = 0
     domain_limited_element_count: int = 0
     incomplete_element_count: int = 0
+    initial_history_reasons: set[str] = field(default_factory=set)
+    diagnostics: list[CalculationDiagnostic] = field(default_factory=list)
 
 
 @dataclass
@@ -77,6 +80,8 @@ def calculate_load_case(
         complete_element_count = 0
         domain_limited_element_count = 0
         incomplete_element_count = 0
+        initial_history_reasons: set[str] = set()
+        diagnostics: list[CalculationDiagnostic] = []
 
         s_ai_sub = [0] * (
             evaluation_points.eval_num_stage1 + 3 * evaluation_points.eval_num_stage2
@@ -89,18 +94,40 @@ def calculate_load_case(
             print("Element", rank + 1, "Total:", imax)
             for symmetry_index in range(specimen.n_symm):
                 print("  Symmetry", symmetry_index + 1, "Total:", specimen.n_symm)
-                element_result = element_life_calculator(
-                    input_data,
-                    load_index=load_index,
-                    area_element_rank=rank,
-                    area_element_index=ranked_elements[rank].area_element_index,
-                    symmetry_index=symmetry_index,
-                    stress_tensor=ranked_elements[rank].stress_tensor,
-                    max_shear_stress=ranked_elements[rank].max_shear_stress,
-                    field_values=field_values,
-                    cycles_result=s_cyc_sub,
-                    crack_depth_result=s_ai_sub,
-                )
+                try:
+                    element_result = element_life_calculator(
+                        input_data,
+                        load_index=load_index,
+                        area_element_rank=rank,
+                        area_element_index=ranked_elements[rank].area_element_index,
+                        symmetry_index=symmetry_index,
+                        stress_tensor=ranked_elements[rank].stress_tensor,
+                        max_shear_stress=ranked_elements[rank].max_shear_stress,
+                        field_values=field_values,
+                        cycles_result=s_cyc_sub,
+                        crack_depth_result=s_ai_sub,
+                    )
+                except Exception as exc:
+                    location = dict(
+                        load_index=load_index, sigma_nom=load_result.sigma_nom,
+                        iteration=int(iteration_numbers[iteration_index]) + 1,
+                        area_element_index=ranked_elements[rank].area_element_index,
+                        area_element_rank=rank, symmetry_index=symmetry_index,
+                    )
+                    if isinstance(exc, CrackLifeDiagnosticError):
+                        exc.context.update(location)
+                    else:
+                        exc.add_note(f"Calculation location: {location}")
+                    raise
+                initial_history_reasons.update(element_result.initial_history_reasons)
+                for diagnostic in element_result.diagnostics:
+                    diagnostic.context.update(
+                        area_element_index=ranked_elements[rank].area_element_index,
+                        area_element_rank=rank, symmetry_index=symmetry_index,
+                        iteration=int(iteration_numbers[iteration_index]) + 1,
+                        load_index=load_index, sigma_nom=load_result.sigma_nom,
+                    )
+                diagnostics.extend(element_result.diagnostics)
                 if element_result.is_complete:
                     complete_element_count += 1
                 else:
@@ -133,6 +160,8 @@ def calculate_load_case(
                 complete_element_count=complete_element_count,
                 domain_limited_element_count=domain_limited_element_count,
                 incomplete_element_count=incomplete_element_count,
+                initial_history_reasons=initial_history_reasons,
+                diagnostics=diagnostics,
             )
         )
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import math  # The math library is used to perform mathematical operations
 import random  # The random library is used to generate random numbers
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import groupby
 
 import numpy as np  # The NumPy library is used to process arrays
@@ -18,6 +18,11 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 from typing import Any
 
+from .diagnostics import (
+    CalculationDiagnostic,
+    CrackLifeDiagnosticError,
+    WeightFunctionDomainError,
+)
 from .inputs import (
     CalculationInputData,
     CrackGrowthConstants,
@@ -49,14 +54,7 @@ class CrackLifeResult:
     surface_crack_length: NumericHistory
     grain_boundary_locations: NumericHistory
     opening_stress: NumericHistory
-
-
-class CrackLifeDiagnosticError(RuntimeError):
-    """Calculation stopped at a diagnosable invalid numerical state."""
-
-
-class WeightFunctionDomainError(CrackLifeDiagnosticError):
-    """Calculation reached outside the supported weight-function domain."""
+    diagnostics: list[CalculationDiagnostic] = field(default_factory=list)
 
 
 def _diagnostic_context(**items: object) -> str:
@@ -87,13 +85,13 @@ def _assert_finite(name: str, value: object, **context: object) -> None:
         message = f"{name} could not be checked for finite values: {value!r}"
         if context:
             message += " (" + _diagnostic_context(**context) + ")"
-        raise CrackLifeDiagnosticError(message) from exc
+        raise CrackLifeDiagnosticError(message, quantity=name, **context) from exc
 
     if not np.all(np.isfinite(values)):
         message = f"{name} contains non-finite values: {values!r}"
         if context:
             message += " (" + _diagnostic_context(**context) + ")"
-        raise CrackLifeDiagnosticError(message)
+        raise CrackLifeDiagnosticError(message, quantity=name, **context)
 
 
 def _assert_weight_function_domain_finite(
@@ -102,7 +100,20 @@ def _assert_weight_function_domain_finite(
     try:
         _assert_finite(name, value, **context)
     except CrackLifeDiagnosticError as exc:
-        raise WeightFunctionDomainError(str(exc)) from exc
+        raise WeightFunctionDomainError(str(exc), **exc.context) from exc
+
+
+def _observe_finite(
+    name: str, value: object,
+    diagnostics: list[CalculationDiagnostic] | None, **context: object,
+) -> None:
+    """Record a non-finite value without changing an existing calculation path."""
+    if diagnostics is None:
+        return
+    try:
+        _assert_finite(name, value, **context)
+    except CrackLifeDiagnosticError as exc:
+        diagnostics.append(exc.diagnostic())
 
 
 @dataclass
@@ -982,7 +993,12 @@ def _interpolate_stage1_weight_function(
                 ac_min=weight_function.stage1_weight_function_ac_min,
                 ac_max=weight_function.stage1_weight_function_ac_max,
             )
-            + ")"
+            + ")",
+            source="stage1_weight_function_domain", at=at, ac=ac,
+            at_min=weight_function.stage1_weight_function_at_min,
+            at_max=weight_function.stage1_weight_function_at_max,
+            ac_min=weight_function.stage1_weight_function_ac_min,
+            ac_max=weight_function.stage1_weight_function_ac_max,
         )
     if weight_function.stage1_weight_function_has_linear_points:
         interpolated_value = griddata(
@@ -1488,6 +1504,7 @@ def _integrate_stage1_life_cycle(
     dNdaList: list[Any],
     LifeMin: Any,
     crack_growth: CrackGrowthConstants,
+    diagnostics: list[CalculationDiagnostic] | None = None,
 ) -> tuple[list[Any], list[Any], bool]:
     if i == 0:
         S_cyc0[i] = 0
@@ -1501,6 +1518,7 @@ def _integrate_stage1_life_cycle(
         dNda = 0.5 * (dNda0 + dNda1)
 
         S_cyc0[i] = dNda * (ai[i] - ai[i - 1]) + S_cyc0[i - 1]
+    _observe_finite("integrated_cycles", S_cyc0[i], diagnostics, evaluation_index=i, crack_depth=ai[i])
     NSuspend = _nnf(S_cyc0[i] / nTemp)
 
     # To improve the calculation efficiency, the calculation is terminated when the number of cycles exceeds 10 times the minimum life
@@ -1525,6 +1543,7 @@ def _integrate_stage2_life_cycle_window(
     LifeMin: Any,
     evaluation_points: EvaluationPointDefinition,
     crack_growth: CrackGrowthConstants,
+    diagnostics: list[CalculationDiagnostic] | None = None,
 ) -> tuple[list[Any], list[Any], bool]:
     ai1, ai2 = ai[i - 1] - ai[i - 2], ai[i] - ai[i - 2]
     dNda0 = 1 / (
@@ -1583,7 +1602,18 @@ def _integrate_stage2_life_cycle_window(
     S_cyc0[i - 1] = S_cyc0[i - 2] + dNda * (ai[i - 1] - ai[i - 2])
     S_cyc0[i] = S_cyc0[i - 1] + dNda * (ai[i] - ai[i - 1])
 
+    _observe_finite(
+        "integrated_cycles", S_cyc0[i - 2 : i + 1], diagnostics,
+        evaluation_index=i, crack_depth=ai[i],
+    )
+
     if min(S_cyc0[i - 2 : i + 1]) > nTemp or min(S_cyc0[i - 2 : i + 1]) < 0:
+        if diagnostics is not None and min(S_cyc0[i - 2 : i + 1]) < 0:
+            diagnostics.append(CalculationDiagnostic(
+                "negative_integrated_cycles",
+                {"evaluation_index": i, "crack_depth": ai[i],
+                 "cycles": S_cyc0[i - 2 : i + 1]},
+            ))
         return S_cyc0, dNdaList, True
 
     for ii in range(i - 2, i + 1):
@@ -1612,6 +1642,7 @@ def _integrate_life_cycle(
     LifeMin: Any,
     evaluation_points: EvaluationPointDefinition,
     crack_growth: CrackGrowthConstants,
+    diagnostics: list[CalculationDiagnostic] | None = None,
 ) -> tuple[list[Any], list[Any], bool]:
     S_cyc0 = Scyc0Copy.copy()
     dNdaList = dNdaListCopy.copy()
@@ -1633,6 +1664,7 @@ def _integrate_life_cycle(
             dNdaList,
             LifeMin,
             crack_growth,
+            diagnostics,
         )
 
     elif is_stage2_integration_point:
@@ -1647,6 +1679,7 @@ def _integrate_life_cycle(
             LifeMin,
             evaluation_points,
             crack_growth,
+            diagnostics,
         )
 
     return S_cyc0, dNdaList, stop_life_integration
@@ -1808,6 +1841,7 @@ def _crack_life_raw(
     field_values: FieldValueProvider,
     S_cyc_result: list[Any],
     S_ai_result: list[Any],
+    diagnostics: list[CalculationDiagnostic] | None = None,
 ) -> tuple[Any, ...]:
     """Run the crack-growth kernel while preserving the original calculation order.
 
@@ -1940,9 +1974,14 @@ def _crack_life_raw(
                 material_strength=material_strength,
                 weight_function=weight_function,
             )
-        except WeightFunctionDomainError:
+        except CrackLifeDiagnosticError as exc:
+            exc.context.update(evaluation_index=i, crack_depth=aii)
+            if not isinstance(exc, WeightFunctionDomainError):
+                raise
             if weight_function_domain_policy != "truncate_candidate":
                 raise
+            if diagnostics is not None:
+                diagnostics.append(exc.diagnostic())
             stop_reason = "weight_function_domain_limit"
             valid_until_index = i - 1
             is_complete = False
@@ -1963,11 +2002,19 @@ def _crack_life_raw(
         # end_time_CTSD = time.time()
 
         if stop_due_to_ctsd_evaluation:
+            if unstable_fracture and diagnostics is not None:
+                diagnostics.append(CalculationDiagnostic(
+                    "grain_layers_exhausted",
+                    {"evaluation_index": i, "crack_depth": aii,
+                     "slip_band": cc, "unstable_fracture": unstable_fracture},
+                ))
             break
 
         if unstable_fracture:
             _record_unstable_fracture_history(i, nai, S_Δδ0, S_cyc0, S_c0)
             break
+
+        _observe_finite("ctsd", Δδ, diagnostics, evaluation_index=i, crack_depth=aii)
 
         ctsd_below_stage2_threshold = is_stage2 and Δδ < crack_growth.delta_delta_th
         if ctsd_below_stage2_threshold:
@@ -2009,6 +2056,7 @@ def _crack_life_raw(
             LifeMin,
             evaluation_points,
             crack_growth,
+            diagnostics,
         )
         valid_until_index = i
         # end_time_cycle = time.time()
@@ -2070,16 +2118,24 @@ def calculate_crack_life(
     crack_depth_result: list[Any],
 ) -> CrackLifeResult:
     """Evaluate one crack and convert the legacy raw tuple to CrackLifeResult."""
-    raw = _crack_life_raw(
-        input_data,
-        load_index=load_index,
-        r0=grain_size,
-        or1=orientation,
-        y=y,
-        z=z,
-        Anai=anai,
-        field_values=field_values,
-        S_cyc_result=cycles_result,
-        S_ai_result=crack_depth_result,
-    )
-    return _crack_result_from_raw(raw)
+    diagnostics: list[CalculationDiagnostic] = []
+    try:
+        raw = _crack_life_raw(
+            input_data,
+            load_index=load_index,
+            r0=grain_size,
+            or1=orientation,
+            y=y,
+            z=z,
+            Anai=anai,
+            field_values=field_values,
+            S_cyc_result=cycles_result,
+            S_ai_result=crack_depth_result,
+            diagnostics=diagnostics,
+        )
+    except CrackLifeDiagnosticError as exc:
+        exc.context.update(y=y, z=z, grain_size=grain_size)
+        raise
+    result = _crack_result_from_raw(raw)
+    result.diagnostics = diagnostics
+    return result

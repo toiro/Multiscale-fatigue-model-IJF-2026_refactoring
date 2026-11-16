@@ -2,6 +2,10 @@
 
 ## 目的
 
+追加の `B_Smooth_T16` / 135 MPa の CTSD NaN 調査は
+[B_Smooth_T16_ctsd_nan_report.md](B_Smooth_T16_ctsd_nan_report.md) に記録する。
+この事象では、保存した CTSD 入力を局所再評価し、計算式や分岐の修正とは分けて原因を確認する。
+
 通常条件の動作確認で発生した計算停止を、計算結果を補正せずに診断可能な形へ整理する。
 
 対象の初期事象:
